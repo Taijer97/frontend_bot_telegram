@@ -1,0 +1,37 @@
+{
+  "5021720802": {
+    "messages": [
+      {
+        "messageId": 3269,
+        "messageType": "bot",
+        "timestamp": "2025-09-29T06:40:14.609Z"
+      },
+      {
+        "messageId": 3272,
+        "messageType": "bot",
+        "timestamp": "2025-09-29T06:40:21.661Z"
+      },
+      {
+        "messageId": 3274,
+        "messageType": "bot",
+        "timestamp": "2025-09-29T06:40:24.389Z"
+      },
+      {
+        "messageId": 3276,
+        "messageType": "bot",
+        "timestamp": "2025-09-29T06:41:28.888Z"
+      }
+    ],
+    "lastActivity": "2025-09-29T06:41:28.888Z"
+  },
+  "8079207867": {
+    "messages": [
+      {
+        "messageId": 3323,
+        "messageType": "bot",
+        "timestamp": "2025-09-29T08:54:38.236Z"
+      }
+    ],
+    "lastActivity": "2025-09-29T08:54:38.236Z"
+  }
+}

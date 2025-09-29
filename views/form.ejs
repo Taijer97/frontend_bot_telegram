@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Generar envío</title>
+</head>
+<body>
+  <h1>Generar PDF de Envío</h1>
+  <form action="/generate" method="POST">
+    <label>Remitente:</label>
+    <select name="remitente">
+      <% personas.forEach(p => { %>
+        <option value="<%= p.id %>"><%= p.nombre %></option>
+      <% }) %>
+    </select>
+
+    <label>Receptor:</label>
+    <select name="receptor">
+      <% personas.forEach(p => { %>
+        <option value="<%= p.id %>"><%= p.nombre %></option>
+      <% }) %>
+    </select>
+
+    <button type="submit">Generar PDF</button>
+  </form>
+</body>
+</html>
