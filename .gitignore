@@ -1,0 +1,44 @@
+# Environment variables
+
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Cache
+cache/
+*.cache
+
+# PDFs generados (opcional - puedes incluirlos o no)
+*.pdf
+
+# Logs
+*.log
+security.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node modules (si usas Node.js)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
