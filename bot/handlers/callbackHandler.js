@@ -9,6 +9,7 @@ const usersManagementMenu = require('../menus/usersMenu');
 const { shopManagementMenu, tiendaWebApp } = require('../menus/shopMenu');
 const reportsMenu = require('../menus/reportsMenu');
 const { getChatStats, cleanOldMessages } = require('../utils/chatManager');
+const consultasMenu = require('../menus/consultasMenu'); // Nueva importación
 
 module.exports = function callbackHandler(bot) {
   bot.on('callback_query', async (query) => {
@@ -73,8 +74,30 @@ module.exports = function callbackHandler(bot) {
         }
       }
 
-      // Consulta
+      // Consulta - Mostrar menú de consultas
       else if (action === 'consulta') {
+        try {
+          await bot.editMessageText(
+            '📝 **Mis Consultas**\n\n' +
+            'Selecciona una opción:',
+            {
+              chat_id: chatId,
+              message_id: query.message.message_id,
+              parse_mode: 'Markdown',
+              ...consultasMenu()
+            }
+          );
+        } catch (error) {
+          console.error('Error mostrando menú de consultas:', error);
+          await bot.sendMessage(chatId, 
+            '📝 **Mis Consultas**\n\nSelecciona una opción:', 
+            { parse_mode: 'Markdown', ...consultasMenu() }
+          );
+        }
+      }
+
+      // Consulta - Ver reporte (generar)
+      else if (action === 'consulta_reporte') {
         let loadingMessageId;
         
         try {
@@ -135,10 +158,14 @@ module.exports = function callbackHandler(bot) {
               contentType: 'application/pdf'
             });
             
-            // Opcional: Eliminar mensaje de "completado" después de 3 segundos
+            // Enviar menú de consultas nuevamente
             setTimeout(async () => {
               try {
                 await bot.deleteMessage(chatId, loadingMessageId);
+                await bot.sendMessage(chatId, 
+                  '📝 **Mis Consultas**\n\n¿Necesitas algo más?', 
+                  { parse_mode: 'Markdown', ...consultasMenu() }
+                );
               } catch (err) {
                 // Ignorar si no se puede eliminar
               }
@@ -150,20 +177,20 @@ module.exports = function callbackHandler(bot) {
             
             console.error('❌ Error generando reporte:', err.message);
             
-            // Actualizar mensaje con error
-            await bot.editMessageText('❌ Error generando el reporte. Intenta nuevamente.', {
-              chat_id: chatId,
-              message_id: loadingMessageId
-            });
-            
-            // Eliminar mensaje de error después de 5 segundos
-            setTimeout(async () => {
-              try {
-                await bot.deleteMessage(chatId, loadingMessageId);
-              } catch (err) {
-                // Ignorar si no se puede eliminar
+            // Actualizar mensaje con error y botón para volver
+            await bot.editMessageText(
+              '❌ Error generando el reporte. Intenta nuevamente.',
+              {
+                chat_id: chatId,
+                message_id: loadingMessageId,
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: '🔄 Reintentar', callback_data: 'consulta_reporte' }],
+                    [{ text: '🔙 Volver', callback_data: 'consulta' }]
+                  ]
+                }
               }
-            }, 5000);
+            );
           }
           
         } catch (error) {
@@ -190,9 +217,227 @@ module.exports = function callbackHandler(bot) {
               filename: `reporte_${user.dni}.pdf`,
               contentType: 'application/pdf'
             });
+            
+            // Enviar menú de consultas
+            await bot.sendMessage(chatId, 
+              '📝 **Mis Consultas**\n\n¿Necesitas algo más?', 
+              { parse_mode: 'Markdown', ...consultasMenu() }
+            );
           } catch (err) {
             console.error('❌ Error generando reporte:', err.message);
-            await bot.sendMessage(chatId, '❌ Error generando el reporte.');
+            await bot.sendMessage(chatId, 
+              '❌ Error generando el reporte.',
+              {
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: '🔄 Reintentar', callback_data: 'consulta_reporte' }],
+                    [{ text: '🔙 Volver', callback_data: 'consulta' }]
+                  ]
+                }
+              }
+            );
+          }
+        }
+      }
+
+      // Consulta - Ver crédito accesible
+      else if (action === 'consulta_credito') {
+        let loadingMessageId;
+        
+        try {
+          // Mostrar mensaje de carga inicial
+          const loadingMessage = await bot.editMessageText('⏳ Evaluando crédito', {
+            chat_id: chatId,
+            message_id: query.message.message_id
+          });
+          loadingMessageId = loadingMessage.message_id;
+          
+          // Animación de carga dinámica
+          const loadingFrames = ['💳', '💰', '📊', '🔍'];
+          const loadingTexts = [
+            'Consultando historial crediticio',
+            'Analizando capacidad de pago',
+            'Evaluando reglas de negocio',
+            'Calculando monto disponible'
+          ];
+          let frameIndex = 0;
+          
+          const loadingInterval = setInterval(async () => {
+            try {
+              await bot.editMessageText(
+                `${loadingFrames[frameIndex]} ${loadingTexts[frameIndex]}${'.'.repeat((frameIndex % 3) + 1)}`,
+                {
+                  chat_id: chatId,
+                  message_id: loadingMessageId
+                }
+              );
+              frameIndex = (frameIndex + 1) % loadingFrames.length;
+            } catch (err) {
+              // Ignorar errores de edición durante la animación
+            }
+          }, 1500);
+
+          try {
+            // Consultar crédito usando la API real
+            const shopUrl = `${process.env.BACKEND_BASE_URL}`;
+            const response = await axios.post(
+              `${shopUrl}/evaluar_credito/evaluar_credito`,
+              { dni: user.dni },
+              { 
+                timeout: 30000,
+                headers: {
+                  'Content-Type': 'application/json'
+                }
+              }
+            );
+            
+            // Detener animación
+            clearInterval(loadingInterval);
+            
+            const creditoData = response.data;
+            
+            // Función para escapar caracteres HTML
+            const escapeHtml = (text) => {
+              if (typeof text !== 'string') return String(text);
+              return text
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+            };
+            
+            // Función para formatear números
+            const formatNumber = (num) => {
+              if (typeof num === 'number') {
+                return num.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              }
+              return String(num);
+            };
+            
+            let mensaje = '💳 <b>Evaluación de Crédito</b>\n\n';
+            mensaje += `👤 <b>DNI:</b> ${escapeHtml(creditoData.dni)}\n\n`;
+            
+            if (creditoData.encontrado) {
+              // Información financiera
+              mensaje += `💰 <b>Monto Total:</b> S/${formatNumber(creditoData.monto_total)}\n`;
+              mensaje += `💳 <b>Cuota Mensual:</b> S/${formatNumber(creditoData.cuota)}\n`;
+              mensaje += `💸 <b>Por Pagar:</b> S/${formatNumber(creditoData.por_pagar)}\n\n`;
+              
+              // Evaluación de reglas
+              mensaje += `📋 <b>Evaluación de Reglas:</b>\n`;
+              mensaje += `• Deuda Menor al 50%: ${creditoData.regla_A ? '✅' : '❌'}\n`;
+              mensaje += `• Salieron ultimos descuentes: ${creditoData.regla_B ? '✅' : '❌'}\n`;
+              mensaje += `• Salieron descuentos completos: ${creditoData.regla_C ? '✅' : '❌'}\n\n`;
+              
+              // Historial de últimos 3 pagos
+              
+              
+              // Decisión final
+              const decisionEmoji = creditoData.decision_final === 'APROBADO' ? '✅' : 
+                                   creditoData.decision_final === 'NEGADO' ? '❌' : '⚠️';
+              mensaje += `🎯 <b>Su Credito esta:</b> ${decisionEmoji} ${escapeHtml(creditoData.decision_final)}\n\n`;
+              
+              // Mensaje adicional según la decisión
+              if (creditoData.decision_final === 'APROBADO') {
+                mensaje += `🎉 ¡Felicidades! Tienes crédito disponible.\n`;
+                mensaje += `🛒 Puedes realizar compras en nuestra tienda.`;
+              } else if (creditoData.decision_final === 'NEGADO') {
+                mensaje += `😔 Lo sentimos, no tienes crédito disponible en este momento.\n`;
+                mensaje += `📞 Contacta a un agente para más información.`;
+              }
+              
+              // Información adicional si existe
+              if (creditoData.message) {
+                mensaje += `\n\n📝 <b>Información:</b> ${escapeHtml(creditoData.message)}`;
+              }
+              
+            } else {
+              mensaje += `❌ <b>No encontrado</b>\n\n`;
+              mensaje += `No se encontró información crediticia para el DNI ${escapeHtml(creditoData.dni)}.\n`;
+              mensaje += `📞 Contacta a un agente para más información.`;
+            }
+
+            // Botones según la decisión
+            let keyboard = [];
+            
+            if (creditoData.encontrado && creditoData.decision_final === 'APROBADO') {
+              keyboard = [
+                [{ text: '🛒 Ir a Tienda', callback_data: 'tienda' }],
+                [{ text: '📊 Ver mi reporte', callback_data: 'consulta_reporte' }],
+                [{ text: '🔙 Volver', callback_data: 'consulta' }],
+                [{ text: '🏠 Menú Principal', callback_data: 'main_menu' }]
+              ];
+            } else {
+              keyboard = [
+                [{ text: '📞 Contactar Agente', url: 'https://wa.me/1234567890' }], // Cambiar por número real
+                [{ text: '📊 Ver mi reporte', callback_data: 'consulta_reporte' }],
+                [{ text: '🔙 Volver', callback_data: 'consulta' }],
+                [{ text: '🏠 Menú Principal', callback_data: 'main_menu' }]
+              ];
+            }
+
+            await bot.editMessageText(mensaje, {
+              chat_id: chatId,
+              message_id: loadingMessageId,
+              parse_mode: 'HTML',
+              reply_markup: {
+                inline_keyboard: keyboard
+              }
+            });
+            
+          } catch (apiError) {
+            // Detener animación en caso de error
+            clearInterval(loadingInterval);
+            
+            console.error('❌ Error consultando crédito:', apiError.message);
+            
+            let errorMessage = '❌ <b>Error consultando el crédito</b>\n\n';
+            
+            if (apiError.code === 'ECONNABORTED' || apiError.message.includes('timeout')) {
+              errorMessage += '⏱️ La consulta está tardando más de lo esperado.\n';
+              errorMessage += 'El servidor puede estar sobrecargado.';
+            } else if (apiError.message.includes('ENOTFOUND') || apiError.message.includes('ECONNREFUSED')) {
+              errorMessage += '🔌 No se puede conectar con el servidor de créditos.\n';
+              errorMessage += 'Verifica que el servicio esté disponible.';
+            } else if (apiError.response && apiError.response.status) {
+              errorMessage += `🔧 Error del servidor: ${apiError.response.status}\n`;
+              errorMessage += 'Contacta al administrador si el problema persiste.';
+            } else {
+              errorMessage += '🔧 Error técnico del sistema.\n';
+              errorMessage += 'Inténtalo nuevamente en unos momentos.';
+            }
+            
+            await bot.editMessageText(errorMessage, {
+              chat_id: chatId,
+              message_id: loadingMessageId,
+              parse_mode: 'HTML',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '🔄 Reintentar', callback_data: 'consulta_credito' }],
+                  [{ text: '🔙 Volver', callback_data: 'consulta' }],
+                  [{ text: '🏠 Menú Principal', callback_data: 'main_menu' }]
+                ]
+              }
+            });
+          }
+          
+        } catch (error) {
+          console.error('Error en consulta_credito:', error);
+          
+          // Si hay un error, intentar sin Markdown
+          try {
+            await bot.sendMessage(chatId, 
+              '❌ Error consultando el crédito. Intenta nuevamente.',
+              {
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: '🔄 Reintentar', callback_data: 'consulta_credito' }],
+                    [{ text: '🔙 Volver', callback_data: 'consulta' }]
+                  ]
+                }
+              }
+            );
+          } catch (fallbackError) {
+            console.error('Error en fallback:', fallbackError);
           }
         }
       }
@@ -475,20 +720,20 @@ module.exports = function callbackHandler(bot) {
             mensaje += `• Pendientes: ${stats.solicitudes_pendientes}\n`;
             mensaje += `• Aprobadas: ${stats.solicitudes_aprobadas}\n`;
             mensaje += `• Rechazadas: ${stats.solicitudes_rechazadas}\n`;
-            mensaje += `• Monto total: $${stats.monto_total_solicitado.toLocaleString()}\n\n`;
+            mensaje += `• Monto total: S/${stats.monto_total_solicitado.toLocaleString()}\n\n`;
             mensaje += `Selecciona una solicitud para ver los detalles:`;
 
             // Crear botones para cada solicitud
             const solicitudButtons = [];
             data.solicitudes.forEach(solicitud => {
               const estadoEmoji = solicitud.estado === 'PENDIENTE' ? '⏳' : 
-                                 solicitud.estado === 'APROBADO' ? '✅' : 
-                                 solicitud.estado === 'RECHAZADO' ? '❌' : '📋';
+                                 solicitud.estado === 'APROBADA' ? '✅' : 
+                                 solicitud.estado === 'RECHAZADA' ? '❌' : '📋';
               
               const buttonText = `Solicitud ${solicitud.id.split('_')[1]} ${estadoEmoji} ${solicitud.estado}`;
               solicitudButtons.push([{ 
                 text: buttonText, 
-                callback_data: `solicitud_detalle_${solicitud.id}` 
+                callback_data: `shop_solicitud_detail_${solicitud.id}` 
               }]);
             });
 
@@ -541,9 +786,9 @@ module.exports = function callbackHandler(bot) {
       }
 
       // Manejar detalles de solicitud específica
-      else if (action.startsWith('solicitud_detalle_')) {
+      else if (action.startsWith('shop_solicitud_detail_')) {
         try {
-          const solicitudId = action.replace('solicitud_detalle_', '');
+          const solicitudId = action.replace('shop_solicitud_detail_', '');
           const shopUrl = process.env.BACKEND_BASE_URL;
           
           // Obtener todas las solicitudes para encontrar la específica
@@ -575,7 +820,7 @@ module.exports = function callbackHandler(bot) {
                 [{ text: '🔙 Volver a Tienda', callback_data: 'tienda' }]
               ];
 
-            } else if (solicitud.estado === 'RECHAZADO') {
+            } else if (solicitud.estado === 'RECHAZADA') {
               mensaje = `❌ SOLICITUD ${solicitud.id.split('_')[1]}\n\n`;
               mensaje += `Lo sentimos por ahora no es posible realizar una ampliacion con su peticion o contactese a un agente de ventas`;
               
@@ -585,7 +830,7 @@ module.exports = function callbackHandler(bot) {
                 [{ text: '🔙 Volver a Tienda', callback_data: 'tienda' }]
               ];
 
-            } else if (solicitud.estado === 'APROBADO') {
+            } else if (solicitud.estado === 'APROBADA') {
               // Solo si está aprobada, mostrar todos los detalles
               const fecha = new Date(solicitud.fecha_solicitud).toLocaleDateString('es-ES');
               
@@ -594,14 +839,14 @@ module.exports = function callbackHandler(bot) {
               mensaje += `📅 Fecha: ${fecha}\n`;
               mensaje += `📦 Productos: ${solicitud.total_productos}\n`;
               mensaje += `📅 Financiamiento: ${solicitud.meses_financiamiento} meses\n`;
-              mensaje += `💳 Cuota mensual: $${solicitud.cuota_mensual.toLocaleString()}\n`;
-              mensaje += `💰 Total: $${solicitud.precio_total.toLocaleString()}\n`;
+              mensaje += `💳 Cuota mensual: S/${solicitud.cuota_mensual.toLocaleString()}\n`;
+              mensaje += `💰 Total: S/${solicitud.precio_total.toLocaleString()}\n`;
               mensaje += `📈 Tasa: ${solicitud.tasa_mensual}\n\n`;
               
               mensaje += `PRODUCTOS:\n`;
               if (solicitud.productos && solicitud.productos.length > 0) {
                 solicitud.productos.forEach(producto => {
-                  mensaje += `• ${producto.nombre} x${producto.cantidad} - $${producto.subtotal.toLocaleString()}\n`;
+                  mensaje += `• ${producto.nombre} x${producto.cantidad} - S/${producto.subtotal.toLocaleString()}\n`;
                 });
               }
 

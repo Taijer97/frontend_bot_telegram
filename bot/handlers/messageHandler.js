@@ -1,5 +1,5 @@
 const userApiService = require('../services/userApiService');
-const { renewSessionTimeout, userSessions } = require('../utils/session');
+const { renewSessionTimeout, userSessions, trackBotMessage } = require('../utils/session');
 const mainMenu = require('../menus/mainMenu');
 const adminMenu = require('../menus/adminMenu');
 
@@ -32,57 +32,63 @@ module.exports = function messageHandler(bot) {
           
           // Actualizar DNI en el backend
           const updateResult = await userApiService.updateUser(targetUserId, { dni: text });
-          console.log('Resultado de actualización:', JSON.stringify(updateResult, null, 2));
           
-          // Limpiar estado de espera
-          userSessions.get(chatId).waitingForDni = null;
-          
-          // Mostrar detalles actualizados del usuario
-          const updatedUser = await userApiService.getUserById(targetUserId);
-          console.log('Usuario actualizado obtenido:', JSON.stringify(updatedUser, null, 2));
-          
-          if (updatedUser) {
-            const rolEmoji = updatedUser.role_id === 1 ? '👑' : '👤';
-            const roleName = updatedUser.role_id === 1 ? 'Admin' : 'Usuario';
-          
-            const userDetailMenu = {
-              reply_markup: {
-                inline_keyboard: [
-                  [
-                    { text: '✏️ Editar Rol', callback_data: `edit_rol_${updatedUser.id}` },
-                    { text: '🆔 Editar DNI', callback_data: `edit_dni_${updatedUser.id}` }
-                  ],
-                  [
-                    { text: '🗑️ Eliminar Usuario', callback_data: `delete_user_${updatedUser.id}` }
-                  ],
-                  [
-                    { text: '🔙 Volver a Lista', callback_data: 'users_list' }
-                  ]
-                ]
-              }
-            };
-          
-            console.log('Enviando mensaje con DNI actualizado:', updatedUser.dni);
+          if (updateResult && updateResult.success) {
+            console.log('DNI actualizado exitosamente:', updateResult);
             
-            // Usar sendMessage en lugar de editMessageText ya que no tenemos messageId
-            await bot.sendMessage(chatId,
-              `👤 **Detalles del Usuario**\n\n` +
-              `${rolEmoji} **Nombre:** ${updatedUser.nombre || 'No especificado'}\n` +
-              `🆔 **DNI:** ${updatedUser.dni || 'No especificado'}\n` +
-              `📱 **Telegram ID:** ${updatedUser.telegram_id || 'No especificado'}\n` +
-              `🎭 **Rol:** ${roleName}\n` +
-              `🏢 **Sede:** ${updatedUser.sede || 'Sin sede'}\n\n` +
-              `✅ **DNI actualizado exitosamente**\n\n` +
-              `Selecciona una acción:`,
-              {
-                parse_mode: 'Markdown',
-                reply_markup: userDetailMenu.reply_markup
-              }
-            );
+            // Limpiar la sesión de espera
+            userSessions.delete(chatId);
+            
+            // Obtener el usuario actualizado
+            const updatedUser = await userApiService.getUserById(targetUserId);
+            
+            if (updatedUser) {
+              console.log('Usuario actualizado obtenido:', updatedUser);
+              
+              // Determinar el rol y emoji
+              const roleName = updatedUser.role_id === 1 ? 'Admin' : 'Usuario';
+              const rolEmoji = updatedUser.role_id === 1 ? '👑' : '👤';
+              
+              // Crear menú de detalles del usuario
+              const userDetailMenu = {
+                reply_markup: {
+                  inline_keyboard: [
+                    [
+                      { text: '✏️ Editar DNI', callback_data: `edit_dni_${updatedUser.id}` },
+                      { text: '🎭 Cambiar Rol', callback_data: `edit_rol_${updatedUser.id}` }
+                    ],
+                    [{ text: '🔙 Volver a Lista', callback_data: 'admin_users' }]
+                  ]
+                }
+              };
+              
+              // Usar sendMessage en lugar de editMessageText ya que no tenemos messageId
+              await bot.sendMessage(chatId,
+                `👤 **Detalles del Usuario**\n\n` +
+                `${rolEmoji} **Nombre:** ${updatedUser.nombre || 'No especificado'}\n` +
+                `🆔 **DNI:** ${updatedUser.dni || 'No especificado'}\n` +
+                `📱 **Telegram ID:** ${updatedUser.telegram_id || 'No especificado'}\n` +
+                `🎭 **Rol:** ${roleName}\n` +
+                `🏢 **Sede:** ${updatedUser.sede || 'Sin sede'}\n\n` +
+                `✅ **DNI actualizado exitosamente**\n\n` +
+                `Selecciona una acción:`,
+                {
+                  parse_mode: 'Markdown',
+                  reply_markup: userDetailMenu.reply_markup
+                }
+              );
+            } else {
+              console.error('No se pudo obtener el usuario actualizado');
+              await bot.sendMessage(chatId, 
+                '❌ **Error**\n\nNo se pudo obtener los datos actualizados del usuario.',
+                { parse_mode: 'Markdown' }
+              );
+            }
+            
           } else {
-            console.error('No se pudo obtener el usuario actualizado');
+            console.error('Error en la respuesta del backend:', updateResult);
             await bot.sendMessage(chatId, 
-              '❌ **Error**\n\nNo se pudo obtener los datos actualizados del usuario.',
+              '❌ **Error al actualizar DNI**\n\nEl backend devolvió un error. Inténtalo nuevamente.',
               { parse_mode: 'Markdown' }
             );
           }
@@ -138,29 +144,42 @@ module.exports = function messageHandler(bot) {
 
           case '❓ Ayuda':
             await bot.sendMessage(chatId,
-              '🆘 Usa los botones del menú para navegar\n/start para reiniciar.');
+              '🤖 **Bot de Asistencia**\n\n' +
+              '📋 **Comandos disponibles:**\n' +
+              '• /start - Iniciar el bot\n' +
+              '• 🏠 Menú Principal - Volver al menú\n' +
+              '• 📊 Mi Perfil - Ver tu información\n' +
+              '• 🛒 Tienda - Acceder a la tienda\n' +
+              '• 📋 Reportes - Ver reportes\n\n' +
+              '💡 **Ayuda adicional:**\n' +
+              'Si tienes problemas, contacta al administrador.',
+              { parse_mode: 'Markdown' });
             break;
 
           case '⚙️ Configuración':
-            await bot.sendMessage(chatId, '⚙️ Configuración no disponible por ahora.');
+            await bot.sendMessage(chatId, 'Configuración del sistema ⚙️');
             break;
 
-          case '📝 Registrarse':
-            await bot.sendMessage(chatId, 'Por favor, ingresa tu DNI para registrarte:');
+          default:
+            if (user) {
+              await bot.sendMessage(chatId,
+                '❓ No entiendo ese comando.\n\nUsa el menú de abajo para navegar.',
+                { parse_mode: 'Markdown' });
+            }
             break;
         }
       }
 
+      // Renovar timeout de sesión si existe
       if (userSessions.has(chatId)) {
         renewSessionTimeout(bot, chatId);
       }
+
     } catch (error) {
       console.error('Error en messageHandler:', error);
-    }
-
-    // Renovar timeout de sesión
-    if (userSessions.has(chatId)) {
-      renewSessionTimeout(bot, chatId);
+      await bot.sendMessage(chatId,
+        '❌ Error interno del servidor. Inténtalo nuevamente.',
+        { parse_mode: 'Markdown' });
     }
   });
 };

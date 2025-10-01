@@ -1,7 +1,7 @@
 function mainMenu(user) {
   const keyboard = [
     [{ text: '👤 Perfil', callback_data: 'perfil' }],
-    [{ text: '📝 Consulta', callback_data: 'consulta' }],
+    [{ text: '📝 Mis Consultas', callback_data: 'consulta' }],
     [{ text: '🛒 Tienda', callback_data: 'tienda' }]
   ];
   if (user.rol === 'admin')
