@@ -19,8 +19,11 @@ module.exports = function startHandler(bot) {
       if (user) {
         console.log(`✅ Usuario encontrado: ${user.nombre} (ID: ${user.id}, Role: ${user.role_id})`);
         
-        // Crear el teclado base para todos los usuarios
-        let keyboard = [['🏠 Menú Principal','📊 Mi Perfil']];
+        // Crear el teclado persistente para todos los usuarios
+        let keyboard = [
+          ['👤 Perfil', '📝 Consultas'],
+          ['🛒 Tienda', '📊 Reportes']
+        ];
         
         // Si es administrador (role_id = 1), añadir botón de admin
         if (user.role_id === 1) {
@@ -28,12 +31,15 @@ module.exports = function startHandler(bot) {
           keyboard.push(['🔑 Panel Admin']); // Añadir fila con botón de admin
         }
         
+        // Añadir botón de cerrar sesión
+        keyboard.push(['🚪 Cerrar Sesión']);
+        
         const replyKeyboard = {
           reply_markup: { keyboard: keyboard, resize_keyboard: true }
         };
         
         const sent = await sendMessageWithTracking(bot, chatId,
-          `Hola ${user.nombre}! 👋`, { ...mainMenu(user), ...replyKeyboard });
+          `¡Hola ${user.nombre}! 👋\n\nUsa el menú de abajo para navegar.`, replyKeyboard);
         startSessionTimeout(bot, chatId);
       } else {
         console.log(`❌ Usuario no encontrado, iniciando registro para: ${chatId}`);
@@ -132,26 +138,32 @@ module.exports = function startHandler(bot) {
       );
       trackBotMessage(chatId, confirmMessage.message_id);
       
-      // Obtener usuario registrado y mostrar menú
+      // Obtener usuario registrado y mostrar menú persistente consistente
       const user = await userApiService.getUser(chatId);
       
       if (user) {
-        const fullKeyboard = {
-          reply_markup: {
-            keyboard: [
-              ['🏠 Menú Principal', '📊 Mi Perfil'],
-              ['🛒 Tienda', '📋 Reportes'],
-              ['❓ Ayuda', '⚙️ Configuración']
-            ],
-            resize_keyboard: true,
-            one_time_keyboard: false
-          }
+        // Crear el mismo teclado persistente que se usa al iniciar sesión
+        let keyboard = [
+          ['👤 Perfil', '📝 Consultas'],
+          ['🛒 Tienda', '📊 Reportes']
+        ];
+        
+        // Si es administrador (role_id = 1), añadir botón de admin
+        if (user.role_id === 1) {
+          keyboard.push(['🔑 Panel Admin']);
+        }
+        
+        // Añadir botón de cerrar sesión
+        keyboard.push(['🚪 Cerrar Sesión']);
+        
+        const replyKeyboard = {
+          reply_markup: { keyboard: keyboard, resize_keyboard: true }
         };
         
         const menuMessage = await bot.sendMessage(
           chatId, 
-          `Hola ${user.nombre}! Bienvenido al sistema 🎉`, 
-          { ...mainMenu(user), ...fullKeyboard }
+          `¡Hola ${user.nombre}! 👋\n\nUsa el menú de abajo para navegar.`, 
+          replyKeyboard
         );
         trackBotMessage(chatId, menuMessage.message_id);
         

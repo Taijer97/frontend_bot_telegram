@@ -104,75 +104,109 @@ module.exports = function messageHandler(bot) {
         return;
       }
 
-      if (text) {
-        switch (text) {
-          case '🏠 Menú Principal':
+      // Renovar timeout de sesión
+      renewSessionTimeout(bot, chatId);
+
+      switch (text) {
+        case '👤 Perfil':
+          await bot.sendMessage(chatId, 
+            `👤 <b>Tu Perfil</b>\n\n` +
+            `📛 <b>Nombre:</b> ${user.nombre}\n` +
+            `🆔 <b>DNI:</b> ${user.dni}\n` +
+            `📱 <b>Telegram ID:</b> ${user.telegram_id}\n` +
+            `🎭 <b>Rol:</b> ${user.role_id === 1 ? 'Administrador' : 'Usuario'}\n` +
+            `🏢 <b>Sede:</b> ${user.sede || 'Sin sede'}`,
+            { parse_mode: 'HTML' }
+          );
+          break;
+
+        case '📝 Consultas':
+          const consultasMenu = require('../menus/consultasMenu');
+          await bot.sendMessage(chatId, 'Selecciona una consulta:', consultasMenu());
+          break;
+
+        case '🛒 Tienda':
+          const { tiendaWebApp } = require('../menus/shopMenu');
+          await bot.sendMessage(chatId, 'Bienvenido a la tienda 🛍️', tiendaWebApp());
+          break;
+
+        case '📊 Reportes':
+          const reportsMenu = require('../menus/reportsMenu');
+          await bot.sendMessage(chatId, 'Selecciona un reporte:', reportsMenu());
+          break;
+
+        case '🔑 Panel Admin':
+          if (user.role_id === 1) {
+            const adminMenu = require('../menus/adminMenu');
+            await bot.sendMessage(chatId, 'Panel de Administración:', adminMenu());
+          } else {
+            await bot.sendMessage(chatId, '❌ No tienes permisos de administrador.');
+          }
+          break;
+
+        case '🚪 Cerrar Sesión':
+          // Limpiar sesión y mostrar solo botón de inicio
+          const { clearUserSession } = require('../utils/session');
+          await clearUserSession(bot, chatId);
+          
+          const startKeyboard = {
+            reply_markup: { 
+              keyboard: [['🚀 Iniciar']], 
+              resize_keyboard: true 
+            }
+          };
+          
+          await bot.sendMessage(chatId, 
+            '👋 <b>Sesión cerrada</b>\n\nPresiona "Iniciar" para volver a comenzar.',
+            { parse_mode: 'HTML', ...startKeyboard }
+          );
+          break;
+
+        case '🚀 Iniciar':
+          // Recrear sesión
+          try {
+            const user = await userApiService.getUser(chatId);
             if (user) {
-              const sent = await bot.sendMessage(chatId, 'Menú Principal', mainMenu(user));
-              trackBotMessage(chatId, sent.message_id);
-            }
-            break;
-
-          case '📊 Mi Perfil':
-            if (user) {
+              // Recrear menú persistente
+              let keyboard = [
+                ['👤 Perfil', '📝 Consultas'],
+                ['🛒 Tienda', '📊 Reportes']
+              ];
+              
+              if (user.role_id === 1) {
+                keyboard.push(['🔑 Panel Admin']);
+              }
+              
+              keyboard.push(['🚪 Cerrar Sesión']);
+              
+              const replyKeyboard = {
+                reply_markup: { keyboard: keyboard, resize_keyboard: true }
+              };
+              
+              const { startSessionTimeout } = require('../utils/session');
+              startSessionTimeout(bot, chatId);
+              
               await bot.sendMessage(chatId,
-                `*Nombre:* ${user.nombre}\n*DNI:* ${user.dni}`,
-                { parse_mode: 'Markdown' });
+                `¡Hola ${user.nombre}! 👋\n\nUsa el menú de abajo para navegar.`, replyKeyboard);
             }
-            break;
+          } catch (error) {
+            await bot.sendMessage(chatId, '❌ Error al iniciar sesión.');
+          }
+          break;
 
-          case '🔑 Panel Admin':
-            if (user && user.role_id === 1) {
-              const sent = await bot.sendMessage(chatId,
-                '🔐 **Panel de Administración**\n\nSelecciona una opción:',
-                { parse_mode: 'Markdown', ...adminMenu() });
-              trackBotMessage(chatId, sent.message_id);
-            } else {
-              await bot.sendMessage(chatId,
-                '❌ No tienes permisos de administrador',
-                { parse_mode: 'Markdown' });
-            }
-            break;
-
-          case '🛒 Tienda':
-            await bot.sendMessage(chatId, 'Bienvenido a la tienda 🛍️');
-            break;
-
-          case '📋 Reportes':
-            await bot.sendMessage(chatId, 'Aquí irían los reportes 📋');
-            break;
-
-          case '❓ Ayuda':
-            await bot.sendMessage(chatId,
-              '🤖 **Bot de Asistencia**\n\n' +
-              '📋 **Comandos disponibles:**\n' +
-              '• /start - Iniciar el bot\n' +
-              '• 🏠 Menú Principal - Volver al menú\n' +
-              '• 📊 Mi Perfil - Ver tu información\n' +
-              '• 🛒 Tienda - Acceder a la tienda\n' +
-              '• 📋 Reportes - Ver reportes\n\n' +
-              '💡 **Ayuda adicional:**\n' +
-              'Si tienes problemas, contacta al administrador.',
-              { parse_mode: 'Markdown' });
-            break;
-
-          case '⚙️ Configuración':
-            await bot.sendMessage(chatId, 'Configuración del sistema ⚙️');
-            break;
-
-          default:
-            if (user) {
-              await bot.sendMessage(chatId,
-                '❓ No entiendo ese comando.\n\nUsa el menú de abajo para navegar.',
-                { parse_mode: 'Markdown' });
-            }
-            break;
-        }
-      }
-
-      // Renovar timeout de sesión si existe
-      if (userSessions.has(chatId)) {
-        renewSessionTimeout(bot, chatId);
+        default:
+          await bot.sendMessage(chatId, 
+            '❓ <b>Comando no reconocido</b>\n\n' +
+            'Usa las opciones del menú de abajo para navegar:\n\n' +
+            '• 👤 Perfil - Ver tu información\n' +
+            '• 📝 Consultas - Ver reportes y crédito\n' +
+            '• 🛒 Tienda - Acceder a la tienda\n' +
+            '• 📊 Reportes - Generar reportes\n' +
+            (user.role_id === 1 ? '• 🔑 Panel Admin - Administración\n' : '') +
+            '• 🚪 Cerrar Sesión - Salir del sistema',
+            { parse_mode: 'HTML' }
+          );
+          break;
       }
 
     } catch (error) {

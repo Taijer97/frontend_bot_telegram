@@ -23,8 +23,7 @@ function tiendaWebApp() {
         [{ 
           text: '📋 Ver Solicitudes', 
           callback_data: 'shop_solicitudes' 
-        }],
-        [{ text: '🔙 Volver al Menú', callback_data: 'main_menu' }]
+        }]
       ]
     }
   };

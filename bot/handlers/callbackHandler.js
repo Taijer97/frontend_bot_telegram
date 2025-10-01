@@ -363,15 +363,13 @@ module.exports = function callbackHandler(bot) {
               keyboard = [
                 [{ text: '🛒 Ir a Tienda', callback_data: 'tienda' }],
                 [{ text: '📊 Ver mi reporte', callback_data: 'consulta_reporte' }],
-                [{ text: '🔙 Volver', callback_data: 'consulta' }],
-                [{ text: '🏠 Menú Principal', callback_data: 'main_menu' }]
+                [{ text: '🔙 Volver', callback_data: 'consulta' }]
               ];
             } else {
               keyboard = [
-                [{ text: '📞 Contactar Agente', url: 'https://wa.me/1234567890' }], // Cambiar por número real
+                [{ text: '📞 Contactar Agente', url: 'https://wa.me/1234567890' }],
                 [{ text: '📊 Ver mi reporte', callback_data: 'consulta_reporte' }],
-                [{ text: '🔙 Volver', callback_data: 'consulta' }],
-                [{ text: '🏠 Menú Principal', callback_data: 'main_menu' }]
+                [{ text: '🔙 Volver', callback_data: 'consulta' }]
               ];
             }
 
@@ -475,6 +473,26 @@ module.exports = function callbackHandler(bot) {
         }
       }
 
+      // Panel de administración principal
+      else if (action === 'admin_menu') {
+        if (user && user.role_id === 1) {
+          await bot.editMessageText(
+            '🔐 **Panel de Administración**\n\nSelecciona una opción:',
+            {
+              chat_id: chatId,
+              message_id: query.message.message_id,
+              parse_mode: 'Markdown',
+              ...adminMenu()
+            }
+          );
+        } else {
+          await bot.answerCallbackQuery(query.id, {
+            text: '❌ No tienes permisos de administrador',
+            show_alert: true 
+          });
+        }
+      }
+
       // Gestión de usuarios
       else if (action === 'admin_users') {
         if (user && user.role_id === 1) {
@@ -487,6 +505,11 @@ module.exports = function callbackHandler(bot) {
               ...usersManagementMenu(chatId)
             }
           );
+        } else {
+          await bot.answerCallbackQuery(query.id, {
+            text: '❌ No tienes permisos de administrador',
+            show_alert: true 
+          });
         }
       }
 
@@ -538,85 +561,20 @@ module.exports = function callbackHandler(bot) {
               }
             );
           }
+        } else {
+          await bot.answerCallbackQuery(query.id, {
+            text: '❌ No tienes permisos de administrador',
+            show_alert: true 
+          });
         }
       }
 
-      // Navegación home
+      // Navegación home (actualizado para el menú persistente)
       else if (action === 'nav_home') {
-        await bot.editMessageText(
-          'Menú Principal',
-          {
-            chat_id: chatId,
-            message_id: query.message.message_id,
-            ...mainMenu(user)
-          }
-        );
-      }
-
-      // Gestión de usuarios
-      else if (action === 'admin_users') {
-        if (user && user.rol === 'admin') {
-          await bot.editMessageText(
-            '👥 **Gestión de Usuarios**\n\nSelecciona una opción:',
-            {
-              chat_id: chatId,
-              message_id: query.message.message_id,
-              parse_mode: 'Markdown',
-              ...usersManagementMenu(chatId)
-            }
-          );
-        }
-      }
-
-      // Lista de usuarios
-      else if (action === 'users_list') {
-        if (user && user.rol === 'admin') {
-          try {
-            const usersResponse = await userApiService.listUsers({ limit: 50 });
-            const users = usersResponse.users || usersResponse.data || usersResponse;
-            const userButtons = [];
-            
-            if (Array.isArray(users) && users.length > 0) {
-              users.forEach(u => {
-                const rolEmoji = u.rol === 'admin' ? '👑' : '👤';
-                const estadoEmoji = u.estado === 'activo' ? '🟢' : '🔴';
-                userButtons.push([{ 
-                  text: `${rolEmoji} ${u.nombre || 'Sin nombre'} ${estadoEmoji}`, 
-                  callback_data: `user_detail_${u.id || u.chat_id}` 
-                }]);
-              });
-            } else {
-              userButtons.push([{ text: '📝 No hay usuarios registrados', callback_data: 'admin_users' }]);
-            }
-            
-            userButtons.push([{ text: '🔙 Volver a Gestión', callback_data: 'admin_users' }]);
-            
-            await bot.editMessageText(
-              '👥 **Lista de Usuarios**\n\nSelecciona un usuario para ver su reporte detallado:',
-              {
-                chat_id: chatId,
-                message_id: query.message.message_id,
-                parse_mode: 'Markdown',
-                reply_markup: { inline_keyboard: userButtons }
-              }
-            );
-          } catch (error) {
-            console.error('Error al obtener lista de usuarios:', error);
-            await bot.editMessageText(
-              '❌ **Error**\n\nNo se pudo obtener la lista de usuarios. Verifica la conexión con el backend.',
-              {
-                chat_id: chatId,
-                message_id: query.message.message_id,
-                parse_mode: 'Markdown',
-                reply_markup: {
-                  inline_keyboard: [
-                    [{ text: '🔙 Volver', callback_data: 'admin_users' }]
-                  ]
-                }
-              }
-            );
-          }
-        }
+        await bot.answerCallbackQuery(query.id, {
+          text: 'Usa el menú persistente de abajo para navegar',
+          show_alert: false
+        });
       }
 
       // Gestión de tienda
@@ -631,68 +589,81 @@ module.exports = function callbackHandler(bot) {
               ...shopManagementMenu(chatId)
             }
           );
+        } else {
+          await bot.answerCallbackQuery(query.id, {
+            text: '❌ No tienes permisos de administrador',
+            show_alert: true 
+          });
         }
       }
 
       // Opciones de tienda
       else if (action === 'shop_list') {
-        await bot.editMessageText(
-          '📦 **Lista de Productos**\n\nAquí se mostrarían los productos.',
-          {
-            chat_id: chatId,
-            message_id: query.message.message_id,
-            parse_mode: 'Markdown',
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: '🔙 Volver', callback_data: 'admin_shop' }]
-              ]
-            }
-          });
+        if (user && user.role_id === 1) {
+          await bot.editMessageText(
+            '📦 **Lista de Productos**\n\nAquí se mostrarían los productos disponibles en la tienda.',
+            {
+              chat_id: chatId,
+              message_id: query.message.message_id,
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '🔙 Volver', callback_data: 'admin_shop' }]
+                ]
+              }
+            });
+        }
       }
 
       else if (action === 'shop_add') {
-        await bot.editMessageText(
-          '➕ **Agregar Producto**\n\nFuncionalidad en desarrollo.',
-          {
-            chat_id: chatId,
-            message_id: query.message.message_id,
-            parse_mode: 'Markdown',
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: '🔙 Volver', callback_data: 'admin_shop' }]
-              ]
-            }
-          });
+        if (user && user.role_id === 1) {
+          await bot.editMessageText(
+            '➕ **Agregar Producto**\n\nFuncionalidad en desarrollo.',
+            {
+              chat_id: chatId,
+              message_id: query.message.message_id,
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '🔙 Volver', callback_data: 'admin_shop' }]
+                ]
+              }
+            });
+        }
       }
 
       else if (action === 'shop_edit') {
-        await bot.editMessageText(
-          '✏️ **Editar Producto**\n\nFuncionalidad en desarrollo.',
-          {
-            chat_id: chatId,
-            message_id: query.message.message_id,
-            parse_mode: 'Markdown',
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: '🔙 Volver', callback_data: 'admin_shop' }]
-              ]
-            }
-          });
+        if (user && user.role_id === 1) {
+          await bot.editMessageText(
+            '✏️ **Editar Producto**\n\nFuncionalidad en desarrollo.',
+            {
+              chat_id: chatId,
+              message_id: query.message.message_id,
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '🔙 Volver', callback_data: 'admin_shop' }]
+                ]
+              }
+            });
+        }
       }
 
       else if (action === 'shop_delete') {
-        await bot.editMessageText(
-          '🗑️ **Eliminar Producto**\n\nFuncionalidad en desarrollo.',
-          {
-            chat_id: chatId,
-            message_id: query.message.message_id,
-            parse_mode: 'Markdown',
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: '🔙 Volver', callback_data: 'admin_shop' }]
-              ]
-            }
-          });
+        if (user && user.role_id === 1) {
+          await bot.editMessageText(
+            '🗑️ **Eliminar Producto**\n\nFuncionalidad en desarrollo.',
+            {
+              chat_id: chatId,
+              message_id: query.message.message_id,
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '🔙 Volver', callback_data: 'admin_shop' }]
+                ]
+              }
+            });
+        }
       }
 
       // Manejar solicitudes de crédito

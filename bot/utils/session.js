@@ -97,24 +97,7 @@ async function clearUserSession(bot, chatId) {
       console.log(`⚠️ Estado general: LIMPIEZA PARCIAL`);
       console.log(`📊 Detalles:`, verificationResults);
     }
-    
-    // 9. Enviar mensaje de confirmación de limpieza (solo si la limpieza fue exitosa)
-    if (deleteResults.successRate > 80) { // Si al menos 80% de mensajes se eliminaron
-      try {
-        await bot.sendMessage(chatId, 
-          '🧹 **Sesión Limpiada**\n\n' +
-          '✅ Todos tus datos han sido procesados correctamente.\n' +
-          `📊 Mensajes eliminados: ${deleteResults.deleted}/${deleteResults.total}\n` +
-          '🔄 Usa /start para comenzar una nueva sesión.',
-          { parse_mode: 'Markdown' }
-        );
-      } catch (msgError) {
-        console.log(`📱 No se pudo enviar mensaje de confirmación: ${msgError.message}`);
-      }
-    } else {
-      console.log(`⚠️ No se envió mensaje de confirmación debido a baja tasa de éxito en eliminación`);
-    }
-    
+     
     console.log(`🏁 Limpieza de sesión completada para usuario: ${chatId}\n`);
     return deleteResults;
     
