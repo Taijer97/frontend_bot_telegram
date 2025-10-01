@@ -12,3 +12,13 @@ data.sqlite
 tests
 .DS_Store
 Thumbs.db
+Dockerfile.alternative
+Dockerfile.multistage
+Dockerfile.alpine
+*.md
+.dockerignore
+docker-compose.yml
+start.sh
+start.bat
+monitor.sh
+monitor.bat

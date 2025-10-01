@@ -1,0 +1,54 @@
+# Etapa de construcción
+FROM node:18-alpine AS builder
+
+# Instalar dependencias de compilación
+RUN apk add --no-cache python3 make g++ sqlite
+
+WORKDIR /app
+
+# Copiar archivos de dependencias
+COPY package*.json ./
+
+# Instalar todas las dependencias (incluyendo devDependencies para compilar)
+RUN npm ci
+
+# Copiar código fuente
+COPY . .
+
+# Etapa de producción
+FROM node:18-alpine AS production
+
+# Instalar solo las dependencias runtime necesarias
+RUN apk add --no-cache curl sqlite
+
+WORKDIR /app
+
+# Copiar node_modules compilados desde la etapa de construcción
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package*.json ./
+
+# Copiar código fuente
+COPY . .
+
+# Crear directorios necesarios
+RUN mkdir -p data reportes db_data
+
+# Configurar usuario no-root
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S botuser -u 1001 -G nodejs && \
+    chown -R botuser:nodejs /app
+
+USER botuser
+
+# Exponer puerto
+EXPOSE 3000
+
+# Variables de entorno
+ENV NODE_ENV=production
+ENV NODE_OPTIONS="--max-old-space-size=512"
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost:3000/health || exit 1
+
+CMD ["npm", "start"]

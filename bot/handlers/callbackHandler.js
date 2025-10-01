@@ -250,7 +250,6 @@ module.exports = function callbackHandler(bot) {
         if (user && user.role_id === 1) {
           try {
             const usersResponse = await userApiService.listUsers({ page: 1 });
-            console.log('Respuesta de listUsers:', JSON.stringify(usersResponse, null, 2));
             
             // Usar la estructura correcta del backend
             const users = usersResponse.usuarios || [];
@@ -465,7 +464,6 @@ module.exports = function callbackHandler(bot) {
           });
 
           const data = response.data;
-          console.log('Respuesta de solicitudes:', data); // Log para depuración
           
           if (data.success && data.solicitudes && data.solicitudes.length > 0) {
             let mensaje = '📋 MIS SOLICITUDES DE CRÉDITO\n\n';
@@ -548,8 +546,6 @@ module.exports = function callbackHandler(bot) {
           const solicitudId = action.replace('solicitud_detalle_', '');
           const shopUrl = process.env.BACKEND_BASE_URL;
           
-          console.log('Buscando solicitud con ID:', solicitudId); // Log para depuración
-          
           // Obtener todas las solicitudes para encontrar la específica
           const response = await axios.get(`${shopUrl}/shop/solicitudes-detalle/${chatId}`, {
             headers: {
@@ -561,13 +557,10 @@ module.exports = function callbackHandler(bot) {
           });
 
           const data = response.data;
-          console.log('Datos recibidos:', data); // Log para depuración
           
           const solicitud = data.solicitudes.find(s => s.id === solicitudId);
-          console.log('Solicitud encontrada:', solicitud); // Log para depuración
 
           if (solicitud) {
-            console.log('Estado de la solicitud:', solicitud.estado); // Log para depuración
             
             let mensaje = '';
             let keyboard = [];
@@ -637,8 +630,6 @@ module.exports = function callbackHandler(bot) {
               ];
             }
 
-            console.log('Mensaje a enviar:', mensaje); // Log para depuración
-
             await bot.editMessageText(mensaje, {
               chat_id: chatId,
               message_id: query.message.message_id,
@@ -648,7 +639,6 @@ module.exports = function callbackHandler(bot) {
             });
 
           } else {
-            console.log('No se encontró la solicitud con ID:', solicitudId); // Log para depuración
             await bot.editMessageText(
               '❌ ERROR\n\n' +
               'No se encontró la solicitud especificada.',
@@ -834,33 +824,16 @@ module.exports = function callbackHandler(bot) {
       // Manejar detalles de usuario específico
       else if (action.startsWith('user_detail_')) {
         const targetUserId = action.split('_')[2];
-        
-        console.log('=== DEBUG USER_DETAIL ===');
-        console.log('Target User ID:', targetUserId);
+    
         
         try {
           const targetUser = await userApiService.getUserById(targetUserId);
-          console.log('Usuario obtenido por ID:', JSON.stringify(targetUser, null, 2));
-          console.log('Tipo de targetUser:', typeof targetUser);
-          console.log('Es array?:', Array.isArray(targetUser));
           
           if (!targetUser) {
             console.log('ERROR: targetUser es null o undefined');
             await bot.answerCallbackQuery(query.id, { text: '❌ Usuario no encontrado' });
             return;
           }
-
-          // Depurar cada campo individualmente
-          console.log('=== CAMPOS INDIVIDUALES ===');
-          console.log('targetUser.nombre:', targetUser.nombre, '(tipo:', typeof targetUser.nombre, ')');
-          console.log('targetUser.dni:', targetUser.dni, '(tipo:', typeof targetUser.dni, ')');
-          console.log('targetUser.telegram_id:', targetUser.telegram_id, '(tipo:', typeof targetUser.telegram_id, ')');
-          console.log('targetUser.role_id:', targetUser.role_id, '(tipo:', typeof targetUser.role_id, ')');
-          console.log('targetUser.sede:', targetUser.sede, '(tipo:', typeof targetUser.sede, ')');
-          
-          // Verificar si hay propiedades anidadas
-          console.log('=== PROPIEDADES DISPONIBLES ===');
-          console.log('Object.keys(targetUser):', Object.keys(targetUser));
           
           // Usar la estructura correcta del backend
           const rolEmoji = targetUser.role_id === 1 ? '👑' : '👤';

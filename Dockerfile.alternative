@@ -1,14 +1,11 @@
-# Usar Node.js LTS como imagen base
-FROM node:18-alpine
+# Usar Node.js LTS con herramientas de compilación incluidas
+FROM node:18
 
-# Instalar dependencias necesarias para compilar better-sqlite3
-RUN apk add --no-cache \
-    python3 \
-    make \
-    g++ \
+# Instalar curl para healthcheck
+RUN apt-get update && apt-get install -y \
     curl \
-    iputils \
-    sqlite
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Crear directorio de trabajo
 WORKDIR /app
@@ -16,7 +13,7 @@ WORKDIR /app
 # Copiar archivos de dependencias
 COPY package*.json ./
 
-# Instalar dependencias con configuración específica para Alpine
+# Instalar dependencias
 RUN npm ci --only=production && npm cache clean --force
 
 # Copiar el código fuente
@@ -26,8 +23,7 @@ COPY . .
 RUN mkdir -p data reportes db_data
 
 # Configurar usuario no-root para seguridad
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S botuser -u 1001 -G nodejs
+RUN groupadd -r nodejs && useradd -r -g nodejs botuser
 
 # Cambiar permisos de directorios
 RUN chown -R botuser:nodejs /app

@@ -9,7 +9,6 @@ module.exports = function startHandler(bot) {
     const chatId = msg.chat.id;
     const userName = msg.from.first_name + (msg.from.last_name ? ` ${msg.from.last_name}` : '');
     
-    console.log(`Comando /start recibido de: ${userName} (chatId: ${chatId}, telegram_id: ${chatId})`);
     
     await clearUserSession(bot, chatId);
 

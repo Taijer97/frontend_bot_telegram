@@ -1,5 +1,4 @@
 const { bot } = require('./bot/bot');
-const { server } = require('./webServer');
 
 console.log('🚀 Aplicación iniciada...');
 console.log('🤖 Bot de Telegram: ✅');
