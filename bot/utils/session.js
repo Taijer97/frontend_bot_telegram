@@ -5,7 +5,7 @@ const { deleteUserMessages } = require('./messages');
 const { clearNavigationStack } = require('./navigation');
 const { clearUserMessages: clearUserChatData, addChatMessage } = require('./chatManager');
 
-async function clearUserSession(bot, chatId) {
+async function clearUserSession(bot, chatId, skipFinalMessage = false) {
   console.log(`🧹 Iniciando limpieza completa de sesión para usuario: ${chatId}`);
   
   try {
@@ -28,11 +28,27 @@ async function clearUserSession(bot, chatId) {
       warningTimeouts.delete(chatId);
     }
     
-    // 4. Limpiar datos de chat guardados en JSON
+    // 4. Solo resetear teclado si no se va a enviar mensaje después
+    if (!skipFinalMessage) {
+      console.log(`⌨️ Reseteando teclado persistente...`);
+      try {
+        await bot.sendMessage(chatId, 
+          '🔄 Sesión limpiada.', {
+          reply_markup: {
+            keyboard: [['🚀 Iniciar']], 
+            resize_keyboard: true 
+          }
+        });
+      } catch (keyboardError) {
+        console.log(`⚠️ No se pudo resetear el teclado: ${keyboardError.message}`);
+      }
+    }
+    
+    // 5. Limpiar datos de chat guardados en JSON
     console.log(`💾 Limpiando datos de chat en JSON...`);
     const jsonCleared = clearUserChatData(chatId.toString());
     
-    // 5. Limpiar sesión en memoria (incluyendo estados temporales)
+    // 6. Limpiar sesión en memoria (incluyendo estados temporales)
     console.log(`🧠 Limpiando sesión en memoria...`);
     if (userSessions.has(chatId)) {
       const session = userSessions.get(chatId);
@@ -55,7 +71,7 @@ async function clearUserSession(bot, chatId) {
     }
     userSessions.delete(chatId);
     
-    // 6. Resetear estado del usuario en base de datos (opcional)
+    // 7. Resetear estado del usuario en base de datos (opcional)
     console.log(`🗄️ Verificando estado del usuario en base de datos...`);
     try {
       const { getUserById, updateUserEstado } = require('../../db');
@@ -68,7 +84,7 @@ async function clearUserSession(bot, chatId) {
       console.log(`⚠️ No se pudo verificar/resetear estado en BD: ${dbError.message}`);
     }
     
-    // 7. Verificación final
+    // 8. Verificación final
     console.log(`🔍 Verificando limpieza completa...`);
     const verificationResults = {
       sessionTimeouts: !sessionTimeouts.has(chatId),
@@ -79,7 +95,7 @@ async function clearUserSession(bot, chatId) {
     
     const allClean = Object.values(verificationResults).every(clean => clean);
     
-    // 8. Resumen final con estadísticas de mensajes
+    // 9. Resumen final con estadísticas de mensajes
     console.log(`\n📊 === RESUMEN DE LIMPIEZA DE SESIÓN ===`);
     console.log(`👤 Usuario: ${chatId}`);
     console.log(`📱 Mensajes procesados: ${deleteResults.total}`);
@@ -88,6 +104,7 @@ async function clearUserSession(bot, chatId) {
     console.log(`📈 Tasa de éxito: ${deleteResults.successRate}%`);
     console.log(`🧭 Stack de navegación: Limpiado`);
     console.log(`⏰ Timeouts: Limpiados`);
+    console.log(`⌨️ Teclado persistente: ${skipFinalMessage ? 'Se manejará externamente' : 'Reseteado'}`);
     console.log(`💾 Datos JSON: ${jsonCleared ? 'Limpiados' : 'No existían'}`);
     console.log(`🧠 Sesión en memoria: Limpiada`);
     
@@ -113,7 +130,8 @@ function startSessionTimeout(bot, chatId) {
 
   const warning = setTimeout(async () => {
     const msg = await bot.sendMessage(chatId,
-      '⏰ ¿Estás ahí? ¿Hay algo más en lo que te pueda ayudar?', {
+      '⏰ ¿Estás ahí? ¿Hay algo más en lo que te pueda ayudar?\n\n' +
+      'Tu sesión se cerrará automáticamente en 2 minutos por inactividad.', {
       reply_markup: {
         inline_keyboard: [
           [{ text: '✅ Sí, continuar', callback_data: 'session_continue' },
@@ -127,14 +145,18 @@ function startSessionTimeout(bot, chatId) {
   }, 3 * 60 * 1000);
 
   const end = setTimeout(async () => {
-    const msg = await bot.sendMessage(chatId,
-      '⏱️ Sesión terminada por inactividad. Usa /start para comenzar de nuevo.');
+    // Primero limpiar la sesión (sin enviar mensaje final)
+    await clearUserSession(bot, chatId, true);
     
-    // Guardar el mensaje de cierre
-    addChatMessage(chatId.toString(), msg.message_id, 'session_end');
-    
-    // Limpiar sesión después de 3 segundos
-    setTimeout(() => clearUserSession(bot, chatId), 3000);
+    // DESPUÉS enviar el mensaje con el botón de inicio
+    await bot.sendMessage(chatId,
+      '⏱️ Sesión terminada por inactividad.\n\n' +
+      'Presiona "Iniciar" para comenzar de nuevo.', {
+      reply_markup: {
+        keyboard: [['🚀 Iniciar']], 
+        resize_keyboard: true 
+      }
+    });
   }, 5 * 60 * 1000);
 
   warningTimeouts.set(chatId, warning);

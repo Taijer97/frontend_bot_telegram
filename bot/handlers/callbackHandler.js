@@ -74,8 +74,17 @@ module.exports = function callbackHandler(bot) {
         }
       }
 
-      // Consulta - Mostrar menú de consultas
+      // Consulta - Mostrar menú de consultas (bloqueado para admins)
       else if (action === 'consulta') {
+        // Verificar si el usuario es administrador
+        if (user && (user.role_id === 1 || user.rol === 'admin')) {
+          await bot.answerCallbackQuery(query.id, { 
+            text: '❌ Los administradores no tienen acceso a consultas',
+            show_alert: true 
+          });
+          return;
+        }
+        
         try {
           await bot.editMessageText(
             '📝 **Mis Consultas**\n\n' +
@@ -96,8 +105,17 @@ module.exports = function callbackHandler(bot) {
         }
       }
 
-      // Consulta - Ver reporte (generar)
+      // Consulta - Ver reporte (generar) - bloqueado para admins
       else if (action === 'consulta_reporte') {
+        // Verificar si el usuario es administrador
+        if (user && (user.role_id === 1 || user.rol === 'admin')) {
+          await bot.answerCallbackQuery(query.id, { 
+            text: '❌ Los administradores no tienen acceso a consultas',
+            show_alert: true 
+          });
+          return;
+        }
+        
         let loadingMessageId;
         
         try {
@@ -240,8 +258,17 @@ module.exports = function callbackHandler(bot) {
         }
       }
 
-      // Consulta - Ver crédito accesible
+      // Consulta - Ver crédito accesible - bloqueado para admins
       else if (action === 'consulta_credito') {
+        // Verificar si el usuario es administrador
+        if (user && (user.role_id === 1 || user.rol === 'admin')) {
+          await bot.answerCallbackQuery(query.id, { 
+            text: '❌ Los administradores no tienen acceso a consultas',
+            show_alert: true 
+          });
+          return;
+        }
+        
         let loadingMessageId;
         
         try {
@@ -324,8 +351,8 @@ module.exports = function callbackHandler(bot) {
               
               // Evaluación de reglas
               mensaje += `📋 <b>Evaluación de Reglas:</b>\n`;
-              mensaje += `• Deuda Menor al 50%: ${creditoData.regla_A ? '✅' : '❌'}\n`;
-              mensaje += `• Salieron ultimos descuentes: ${creditoData.regla_B ? '✅' : '❌'}\n`;
+              mensaje += `• Deuda menor al 50%: ${creditoData.regla_A ? '✅' : '❌'}\n`;
+              mensaje += `• Salieron seguidos: ${creditoData.regla_B ? '✅' : '❌'}\n`;
               mensaje += `• Salieron descuentos completos: ${creditoData.regla_C ? '✅' : '❌'}\n\n`;
               
               // Historial de últimos 3 pagos
@@ -1361,15 +1388,11 @@ module.exports = function callbackHandler(bot) {
       // Manejar callbacks de sesión
       else if (action === 'session_continue') {
         await bot.editMessageText(
-          '✅ Sesión renovada. ¡Continuemos!',
+          '✅ Sesión renovada. ¡Continuemos!\n\n' +
+          'Usa el menú persistente de abajo para navegar.',
           {
             chat_id: chatId,
-            message_id: query.message.message_id,
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: '🏠 Ir al Menú Principal', callback_data: 'main_menu' }]
-              ]
-            }
+            message_id: query.message.message_id
           }
         );
         
@@ -1386,9 +1409,18 @@ module.exports = function callbackHandler(bot) {
           }
         );
         
+        // Cambiar el teclado persistente a solo botón de inicio
+        await bot.sendMessage(chatId, 
+          '🔄 Sesión cerrada correctamente.', {
+          reply_markup: {
+            keyboard: [['🚀 Iniciar']], 
+            resize_keyboard: true 
+          }
+        });
+        
         // Limpiar la sesión después de 3 segundos
         setTimeout(async () => {
-          await clearUserSession(bot, chatId);
+          await clearUserSession(bot, chatId, false); // false = enviar mensaje final
         }, 3000);
       }
 

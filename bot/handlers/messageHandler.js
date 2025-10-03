@@ -13,6 +13,11 @@ module.exports = function messageHandler(bot) {
 
     try {
       const user = await userApiService.getUser(chatId);
+      
+      // Si el usuario no existe, no procesar el mensaje (está en proceso de registro)
+      if (!user) {
+        return; // Simplemente ignorar el mensaje sin mostrar error
+      }
 
       // Manejar actualización de DNI si el usuario está en estado de espera
       if (userSessions.has(chatId) && userSessions.get(chatId).waitingForDni) {
@@ -121,6 +126,17 @@ module.exports = function messageHandler(bot) {
           break;
 
         case '📝 Consultas':
+          // Verificar si el usuario es administrador
+          if (user.role_id === 1) {
+            await bot.sendMessage(chatId, 
+              '❌ <b>Acceso restringido</b>\n\n' +
+              'Los administradores no tienen acceso a la sección de consultas.\n' +
+              'Usa el Panel Admin para gestionar el sistema.',
+              { parse_mode: 'HTML' }
+            );
+            return;
+          }
+          
           const consultasMenu = require('../menus/consultasMenu');
           await bot.sendMessage(chatId, 'Selecciona una consulta:', consultasMenu());
           break;
@@ -169,9 +185,16 @@ module.exports = function messageHandler(bot) {
             if (user) {
               // Recrear menú persistente
               let keyboard = [
-                ['👤 Perfil', '📝 Consultas'],
-                ['🛒 Tienda', '📊 Reportes']
+                ['👤 Perfil']
               ];
+              
+              // Solo agregar consultas si NO es administrador
+              if (user.role_id !== 1) {
+                keyboard[0].push('📝 Consultas'); // Agregar a la primera fila
+                keyboard.push(['🛒 Tienda', '📊 Reportes']); // Segunda fila
+              } else {
+                keyboard.push(['🛒 Tienda', '📊 Reportes']); // Primera fila para admins
+              }
               
               if (user.role_id === 1) {
                 keyboard.push(['🔑 Panel Admin']);
@@ -211,9 +234,18 @@ module.exports = function messageHandler(bot) {
 
     } catch (error) {
       console.error('Error en messageHandler:', error);
-      await bot.sendMessage(chatId,
-        '❌ Error interno del servidor. Inténtalo nuevamente.',
-        { parse_mode: 'Markdown' });
+      // Solo mostrar error si el usuario existe (está registrado)
+      try {
+        const user = await userApiService.getUser(chatId);
+        if (user) {
+          await bot.sendMessage(chatId,
+            '❌ Error interno del servidor. Inténtalo nuevamente.',
+            { parse_mode: 'Markdown' });
+        }
+      } catch (checkError) {
+        // Si no se puede verificar el usuario, no mostrar error
+        console.log('Usuario no registrado, ignorando error del messageHandler');
+      }
     }
   });
 };

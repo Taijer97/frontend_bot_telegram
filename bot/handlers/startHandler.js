@@ -21,9 +21,16 @@ module.exports = function startHandler(bot) {
         
         // Crear el teclado persistente para todos los usuarios
         let keyboard = [
-          ['👤 Perfil', '📝 Consultas'],
-          ['🛒 Tienda', '📊 Reportes']
+          ['👤 Perfil']
         ];
+        
+        // Solo agregar consultas si NO es administrador
+        if (user.role_id !== 1) {
+          keyboard[0].push('📝 Consultas'); // Agregar a la primera fila
+          keyboard.push(['🛒 Tienda', '📊 Reportes']); // Segunda fila
+        } else {
+          keyboard.push(['🛒 Tienda', '📊 Reportes']); // Primera fila para admins
+        }
         
         // Si es administrador (role_id = 1), añadir botón de admin
         if (user.role_id === 1) {
@@ -68,43 +75,47 @@ module.exports = function startHandler(bot) {
 
   // Función para iniciar el proceso de registro simplificado
   async function startRegistrationProcess(bot, chatId) {
-    const simpleKeyboard = { 
-      reply_markup: { 
-        keyboard: [['📝 Registrarse']], 
-        resize_keyboard: true 
-      }
-    };
-    
-    const welcomeMessage = await sendMessageWithTracking(
+    // Enviar mensaje de bienvenida y solicitar DNI directamente
+    await sendMessageWithTracking(
       bot,
       chatId,
-      '¡Bienvenido! 👋\n\nPara comenzar, necesito que te registres.',
+      '¡Bienvenido! 👋\n\nPara comenzar, necesito que te registres.\n\n🪪 Por favor, ingresa tu DNI (8-12 dígitos):',
       { parse_mode: 'Markdown' }
     );
 
-    await sendMessageWithTracking(bot, chatId, '🪪 Por favor, ingresa tu DNI:');
-    bot.once('message', async (m1) => {
-      if (m1.text === '📝 Registrarse') {
-        await bot.sendMessage(chatId, '🪪 Por favor, ingresa tu DNI:');
-        bot.once('message', async (m2) => {
-          await handleDniInput(bot, chatId, m2);
-        });
-      } else {
-        await handleDniInput(bot, chatId, m1);
-      }
-    });
+    // Configurar listener para el DNI
+    setupDniListener(bot, chatId);
+  }
+
+  // Configurar listener para capturar el DNI
+  function setupDniListener(bot, chatId) {
+    const dniListener = async (msg) => {
+      // Solo procesar mensajes del chat correcto
+      if (msg.chat.id !== chatId) return;
+      
+      // Ignorar comandos
+      if (msg.text && msg.text.startsWith('/')) return;
+      
+      // Remover este listener específico
+      bot.removeListener('message', dniListener);
+      
+      // Procesar el DNI
+      await handleDniInput(bot, chatId, msg);
+    };
+    
+    // Agregar el listener
+    bot.on('message', dniListener);
   }
 
   // Manejar entrada del DNI y completar registro automáticamente
   async function handleDniInput(bot, chatId, msg) {
-    const dni = msg.text.trim();
+    const dni = msg.text ? msg.text.trim() : '';
     
     // Validar DNI (básico)
     if (!/^\d{8,12}$/.test(dni)) {
       await bot.sendMessage(chatId, '❌ DNI inválido. Debe contener entre 8 y 12 dígitos.\n\n🪪 Ingresa tu DNI nuevamente:');
-      bot.once('message', async (m) => {
-        await handleDniInput(bot, chatId, m);
-      });
+      // Configurar listener nuevamente para el siguiente intento
+      setupDniListener(bot, chatId);
       return;
     }
 

@@ -25,11 +25,14 @@ class UserApiService {
       }
     });
 
-    // Interceptor para manejo de errores
+    // Interceptor simplificado para manejo de errores
     this.api.interceptors.response.use(
       (response) => response,
       (error) => {
-        console.error('API Error:', error.response?.data || error.message);
+        // Solo loggear errores críticos, no todos los errores
+        if (error.response?.status >= 500) {
+          console.error('Error crítico del servidor:', error.response?.status, error.response?.statusText);
+        }
         throw error;
       }
     );
@@ -140,16 +143,12 @@ class UserApiService {
   }
 
   /**
-   * Crear nuevo usuario
+   * Crear nuevo usuario (simplificado)
    * @param {Object} userData - Datos del usuario
    * @returns {Promise<Object>} Usuario creado
    */
   async createUser(userData) {
     try {
-      console.log('Intentando crear usuario con datos:', JSON.stringify(userData, null, 2));
-      console.log('URL completa:', `${this.baseURL}/users/`);
-      
-      // Asegurar que no enviamos campos que puedan causar conflicto
       const cleanUserData = {
         telegram_id: userData.telegram_id,
         dni: userData.dni,
@@ -158,43 +157,23 @@ class UserApiService {
         sede: userData.sede
       };
       
-      console.log('Datos limpios para envío:', JSON.stringify(cleanUserData, null, 2));
-      
       const response = await this.api.post('/users/', cleanUserData);
-      console.log('Usuario creado exitosamente:', response.data);
       return response.data;
     } catch (error) {
-      console.error('Error al crear usuario:', error.message);
+      // Manejo simplificado de errores
+      if (error.response?.status === 400 && 
+          error.response.data?.detail?.includes("Field 'id' doesn't have a default value")) {
+        throw new Error('configuración del backend');
+      }
       
-      // Mostrar detalles específicos del error
-      if (error.response) {
-        console.error('Status:', error.response.status);
-        console.error('Status Text:', error.response.statusText);
-        console.error('Data:', JSON.stringify(error.response.data, null, 2));
-        console.error('Headers:', error.response.headers);
-        
-        // Manejo específico para el error de campo 'id'
-        if (error.response.status === 400 && 
-            error.response.data?.detail?.includes("Field 'id' doesn't have a default value")) {
-          throw new Error('Error de configuración del backend: El campo ID no está configurado correctamente en la base de datos. Contacta al administrador del sistema.');
-        }
-        
-        // Proporcionar mensaje más específico basado en el status
-        if (error.response.status === 422) {
-          throw new Error(`Error de validación: ${JSON.stringify(error.response.data)}`);
-        } else if (error.response.status === 401) {
-          throw new Error('Error de autenticación: API Key inválida');
-        } else if (error.response.status === 404) {
-          throw new Error('Endpoint no encontrado: Verifica la URL del backend');
-        } else {
-          throw new Error(`Error del servidor (${error.response.status}): ${error.response.statusText}`);
-        }
-      } else if (error.request) {
-        console.error('No response received:', error.request);
-        throw new Error('No se pudo conectar con el backend: Sin respuesta del servidor');
+      if (error.response?.status === 422) {
+        throw new Error('validación');
+      } else if (error.response?.status === 401) {
+        throw new Error('autenticación');
+      } else if (error.response?.status === 404) {
+        throw new Error('conectar');
       } else {
-        console.error('Error setting up request:', error.message);
-        throw new Error(`Error de configuración: ${error.message}`);
+        throw new Error('Error del servidor');
       }
     }
   }
@@ -305,10 +284,18 @@ class UserApiService {
   async healthCheck() {
     try {
       const response = await this.api.get('/users/health/check');
-      return response.data;
+      const result = response.data;
+      
+      // Si el health check indica error, lanzar excepción
+      if (result.status === 'error') {
+        throw new Error(result.message || 'Backend no disponible');
+      }
+      
+      return result;
     } catch (error) {
       console.error('Error en health check:', error);
-      return { status: 'error', message: 'Backend no disponible' };
+      // Lanzar excepción en lugar de devolver objeto de error
+      throw new Error('Backend no disponible');
     }
   }
 
@@ -332,36 +319,48 @@ class UserApiService {
   }
 
   /**
-   * Método de compatibilidad: addUser (con test de conectividad)
+   * Método de compatibilidad: addUser (simplificado y sin logs excesivos)
    * @param {string} chatId - Chat ID del usuario (telegram_id)
    * @param {string} dni - DNI del usuario
    * @param {string} nombre - Nombre del usuario (tomado de Telegram)
-   * @param {number} roleId - ID del rol (por defecto 1)
+   * @param {number} roleId - ID del rol (por defecto 2)
    * @param {string|null} sede - Sede del usuario (por defecto null, se omite del payload)
    * @returns {Promise<Object>} Usuario creado
    */
   async addUser(chatId, dni, nombre, roleId = 2, sede = null) {
-    // Verificar conectividad antes de proceder
-    try {
-      console.log('Verificando conectividad con el backend...');
-      await this.healthCheck();
-      console.log('Conectividad verificada exitosamente');
-    } catch (error) {
-      console.error('Error de conectividad:', error.message);
-      throw new Error('No se puede conectar con el backend. Verifica la configuración.');
-    }
-    
     const userData = {
       telegram_id: chatId.toString(),
       dni: dni,
       nombre: nombre,
       role_id: roleId,
-      sede: sede || "Sin sede"  // Siempre incluir sede, usar "Sin sede" si es null
+      sede: sede || "Sin sede"
     };
     
-    console.log('Datos preparados para registro:', JSON.stringify(userData, null, 2));
-    
-    return await this.createUser(userData);
+    try {
+      // Llamada directa sin logs excesivos
+      const response = await this.api.post('/users/', userData);
+      return response.data;
+    } catch (error) {
+      // Solo loggear errores reales, no warnings
+      if (error.response?.status >= 500) {
+        console.error('Error del servidor:', error.response?.status);
+      }
+      
+      // Manejo específico de errores sin mostrar detalles técnicos al usuario
+      if (error.response?.status === 400) {
+        throw new Error('Datos de usuario inválidos');
+      } else if (error.response?.status === 409) {
+        throw new Error('El usuario ya existe');
+      } else if (error.response?.status >= 500) {
+        throw new Error('Error interno del servidor');
+      } else if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+        throw new Error('Timeout de conexión');
+      } else if (error.message.includes('ENOTFOUND') || error.message.includes('ECONNREFUSED')) {
+        throw new Error('No se puede conectar con el servidor');
+      } else {
+        throw new Error('Error al registrar usuario');
+      }
+    }
   }
 
   /**
