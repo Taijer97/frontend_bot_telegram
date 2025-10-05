@@ -169,8 +169,82 @@ async function deleteMessagesBatch(bot, chatId, messageIds, batchSize = 10, dela
   return results;
 }
 
+/**
+ * Función optimizada que solo elimina mensajes del bot (más eficiente)
+ * @param {Object} bot - Instancia del bot
+ * @param {number} chatId - ID del chat
+ */
+async function deleteBotMessagesOnly(bot, chatId) {
+  console.log(`🤖 Eliminando solo mensajes del bot para usuario: ${chatId}`);
+  
+  let totalMessages = 0;
+  let deletedMessages = 0;
+  let failedMessages = 0;
+  
+  // Función helper para manejar eliminación individual
+  async function deleteMessageSafely(messageId, source = 'unknown') {
+    totalMessages++;
+    try {
+      await bot.deleteMessage(chatId, messageId);
+      deletedMessages++;
+      console.log(`✅ Mensaje del bot ${messageId} eliminado (${source})`);
+      return true;
+    } catch (error) {
+      failedMessages++;
+      console.log(`❌ Error eliminando mensaje del bot ${messageId} (${source}): ${error.message}`);
+      return false;
+    }
+  }
+  
+  // Eliminar solo mensajes del bot de memoria
+  if (userMessages.has(chatId)) {
+    const memoryMessages = userMessages.get(chatId);
+    console.log(`📱 Eliminando ${memoryMessages.length} mensajes del bot de memoria...`);
+    
+    for (let messageId of memoryMessages) {
+      await deleteMessageSafely(messageId, 'memoria-bot');
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    
+    userMessages.delete(chatId);
+  }
+  
+  // Eliminar solo mensajes del bot del JSON
+  const jsonMessages = getUserMessages(chatId.toString());
+  const botMessagesFromJson = jsonMessages.filter(msg => 
+    msg.messageType === 'bot' || !msg.messageType // Asumir que sin tipo es del bot
+  );
+  
+  if (botMessagesFromJson.length > 0) {
+    console.log(`💾 Eliminando ${botMessagesFromJson.length} mensajes del bot de JSON...`);
+    
+    for (let msgData of botMessagesFromJson) {
+      await deleteMessageSafely(msgData.messageId, 'JSON-bot');
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+  }
+  
+  console.log(`\n🤖 === RESUMEN LIMPIEZA BOT ===`);
+  console.log(`👤 Usuario: ${chatId}`);
+  console.log(`📱 Mensajes del bot procesados: ${totalMessages}`);
+  console.log(`✅ Mensajes del bot eliminados: ${deletedMessages}`);
+  console.log(`❌ Mensajes del bot que fallaron: ${failedMessages}`);
+  
+  const successRate = totalMessages > 0 ? ((deletedMessages / totalMessages) * 100).toFixed(1) : 100;
+  console.log(`📈 Tasa de éxito: ${successRate}%`);
+  console.log(`🧹 Limpieza de mensajes del bot completada\n`);
+  
+  return {
+    total: totalMessages,
+    deleted: deletedMessages,
+    failed: failedMessages,
+    successRate: parseFloat(successRate)
+  };
+}
+
 module.exports = { 
   trackBotMessage, 
   deleteUserMessages,
+  deleteBotMessagesOnly,
   deleteMessagesBatch
 };

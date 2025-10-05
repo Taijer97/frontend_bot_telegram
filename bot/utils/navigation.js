@@ -4,8 +4,6 @@ function createNavigationButtons(chatId, currentScreen = null, showBack = true, 
   const navButtons = [];
   if (showBack && navigationStack.has(chatId) && navigationStack.get(chatId).length > 0)
     navButtons.push({ text: '⬅️ Atrás', callback_data: 'nav_back' });
-  if (showHome && currentScreen !== 'main')
-    navButtons.push({ text: '🏠 Inicio', callback_data: 'nav_home' });
   return navButtons.length > 0 ? [navButtons] : [];
 }
 

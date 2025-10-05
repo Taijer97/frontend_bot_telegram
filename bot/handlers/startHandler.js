@@ -1,4 +1,3 @@
-const mainMenu = require('../menus/mainMenu');
 const adminMenu = require('../menus/adminMenu');
 const userApiService = require('../services/userApiService');
 const { startSessionTimeout, clearUserSession, sendMessageWithTracking } = require('../utils/session');

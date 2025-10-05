@@ -28,7 +28,16 @@ async function clearUserSession(bot, chatId, skipFinalMessage = false) {
       warningTimeouts.delete(chatId);
     }
     
-    // 4. Solo resetear teclado si no se va a enviar mensaje después
+    // 4. Limpiar estado de warning activo
+    if (userSessions.has(chatId)) {
+      const session = userSessions.get(chatId);
+      if (session.warningActive) {
+        session.warningActive = false;
+        console.log(`⚠️ Limpiando estado de warning activo...`);
+      }
+    }
+    
+    // 5. Solo resetear teclado si no se va a enviar mensaje después
     if (!skipFinalMessage) {
       console.log(`⌨️ Reseteando teclado persistente...`);
       try {
@@ -129,9 +138,16 @@ function startSessionTimeout(bot, chatId) {
   if (warningTimeouts.has(chatId)) clearTimeout(warningTimeouts.get(chatId));
 
   const warning = setTimeout(async () => {
+    // Marcar que hay una alerta activa
+    const session = userSessions.get(chatId) || {};
+    session.warningActive = true;
+    session.lastActivity = Date.now();
+    userSessions.set(chatId, session);
+    
     const msg = await bot.sendMessage(chatId,
       '⏰ ¿Estás ahí? ¿Hay algo más en lo que te pueda ayudar?\n\n' +
-      'Tu sesión se cerrará automáticamente en 2 minutos por inactividad.', {
+      'Tu sesión se cerrará automáticamente en 2 minutos por inactividad.\n\n', {
+      parse_mode: 'HTML',
       reply_markup: {
         inline_keyboard: [
           [{ text: '✅ Sí, continuar', callback_data: 'session_continue' },
@@ -161,7 +177,14 @@ function startSessionTimeout(bot, chatId) {
 
   warningTimeouts.set(chatId, warning);
   sessionTimeouts.set(chatId, end);
-  userSessions.set(chatId, { lastActivity: Date.now() });
+  
+  // PRESERVAR datos existentes de la sesión
+  if (!userSessions.has(chatId)) {
+    userSessions.set(chatId, { lastActivity: Date.now() });
+  } else {
+    const existingSession = userSessions.get(chatId);
+    existingSession.lastActivity = Date.now();
+  }
 }
 
 function renewSessionTimeout(bot, chatId) {
@@ -266,13 +289,11 @@ async function clearUserMessagesSelective(bot, chatId, options = {}) {
   }
 }
 
-module.exports = { 
-  startSessionTimeout, 
-  renewSessionTimeout, 
-  clearUserSession,
-  clearUserMessagesSelective, // Nueva función
+module.exports = {
   userSessions,
-  trackBotMessage,
+  startSessionTimeout,
+  renewSessionTimeout,
+  clearUserSession,
   sendMessageWithTracking,
-  editMessageWithTracking
+  trackBotMessage
 };

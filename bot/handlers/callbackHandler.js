@@ -1,15 +1,17 @@
 const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
+const FormData = require('form-data');
 const userApiService = require('../services/userApiService');
-const { renewSessionTimeout, userSessions, clearUserSession } = require('../utils/session');
+const { renewSessionTimeout, userSessions, clearUserSession, trackBotMessage } = require('../utils/session');
 const mainMenu = require('../menus/mainMenu');
 const adminMenu = require('../menus/adminMenu');
 const usersManagementMenu = require('../menus/usersMenu');
 const { shopManagementMenu, tiendaWebApp } = require('../menus/shopMenu');
 const reportsMenu = require('../menus/reportsMenu');
 const { getChatStats, cleanOldMessages } = require('../utils/chatManager');
-const consultasMenu = require('../menus/consultasMenu'); // Nueva importación
+const consultasMenu = require('../menus/consultasMenu');
+const { autorizacionesAdminMenu, confirmarGenerarAutorizacion, paginacionAutorizaciones } = require('../menus/autorizacionesMenu');
 
 module.exports = function callbackHandler(bot) {
   bot.on('callback_query', async (query) => {
@@ -20,12 +22,26 @@ module.exports = function callbackHandler(bot) {
 
     console.log(`📞 Callback recibido: ${data} de usuario: ${chatId}`);
 
+    // Trackear la interacción del usuario (el callback query en sí)
+    // Nota: Los callback queries no tienen message_id propio, pero podemos trackear el mensaje original
+    trackBotMessage(chatId, messageId, 'user_interaction');
+
     // Responder al callback query para evitar el loading
     await bot.answerCallbackQuery(query.id);
 
     try {
       // Obtener usuario actual
       const user = await userApiService.getUser(chatId);
+      
+      // Verificar si hay una alerta de sesión activa
+      const session = userSessions.get(chatId) || {};
+      if (session.warningActive && action !== 'session_continue' && action !== 'session_exit') {
+        await bot.answerCallbackQuery(query.id, {
+          text: '⚠️ Debes responder a la alerta de sesión primero. Solo puedes elegir "Sí, continuar" o "No, salir".',
+          show_alert: true
+        });
+        return;
+      }
 
       // Navegación principal
       if (action === 'main_menu') {
@@ -53,7 +69,7 @@ module.exports = function callbackHandler(bot) {
               parse_mode: 'Markdown',
               reply_markup: {
                 inline_keyboard: [
-                  [{ text: '🔙 Volver al Menú Principal', callback_data: 'main_menu' }]
+                  [{ text: '🔙 Atrás', callback_data: 'back' }]
                 ]
               }
             }
@@ -66,7 +82,7 @@ module.exports = function callbackHandler(bot) {
               message_id: query.message.message_id,
               reply_markup: {
                 inline_keyboard: [
-                  [{ text: '🔙 Volver al Menú Principal', callback_data: 'main_menu' }]
+                  [{ text: '🔙 Atrás', callback_data: 'back' }]
                 ]
               }
             }
@@ -258,6 +274,261 @@ module.exports = function callbackHandler(bot) {
         }
       }
 
+      // Crear autorización - Proceso de captura de firma y huella
+      else if (action === 'crear_autorizacion') {
+        // Verificar si el usuario es administrador (los admins no tienen acceso a consultas)
+        if (user && (user.role_id === 1 || user.rol === 'admin')) {
+          await bot.answerCallbackQuery(query.id, { 
+            text: '❌ Los administradores no tienen acceso a consultas',
+            show_alert: true 
+          });
+          return;
+        }
+
+        try {
+          await bot.editMessageText(
+            '✍️ **Crear Autorización**\n\n' +
+            '📋 Para crear una autorización necesitamos:\n' +
+            '• 📝 Foto de tu firma\n' +
+            '• 👆 Foto de tu huella dactilar\n\n' +
+            '⚠️ **Importante:** Las fotos deben ser claras y legibles.\n\n' +
+            'Presiona "Comenzar" para iniciar el proceso.',
+            {
+              chat_id: chatId,
+              message_id: query.message.message_id,
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '🚀 Comenzar proceso', callback_data: 'autorizacion_iniciar' }],
+                  [{ text: '🔙 Volver a Consultas', callback_data: 'consulta' }]
+                ]
+              }
+            }
+          );
+        } catch (error) {
+          console.error('Error mostrando crear autorización:', error);
+          await bot.sendMessage(chatId, 
+            '✍️ **Crear Autorización**\n\nPresiona "Comenzar" para iniciar el proceso.', 
+            { 
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '🚀 Comenzar proceso', callback_data: 'autorizacion_iniciar' }],
+                  [{ text: '🔙 Volver a Consultas', callback_data: 'consulta' }]
+                ]
+              }
+            }
+          );
+        }
+      }
+
+      // Iniciar proceso de autorización - Solicitar firma
+      else if (action === 'autorizacion_iniciar') {
+        console.log(`[AUTORIZACION DEBUG] Handler autorizacion_iniciar ejecutado para chatId: ${chatId}`);
+        console.log(`[AUTORIZACION DEBUG] Usuario:`, user);
+        console.log(`[AUTORIZACION DEBUG] role_id:`, user?.role_id);
+        console.log(`[AUTORIZACION DEBUG] rol:`, user?.rol);
+        
+        // Verificar si el usuario es administrador
+        if (user && (user.role_id === 1 || user.rol === 'admin')) {
+          console.log(`[AUTORIZACION DEBUG] Usuario es administrador, bloqueando acceso`);
+          await bot.answerCallbackQuery(query.id, { 
+            text: '❌ Los administradores no tienen acceso a consultas',
+            show_alert: true 
+          });
+          return;
+        }
+
+        console.log(`[AUTORIZACION DEBUG] Usuario no es administrador, continuando...`);
+
+        try {
+          // Guardar el estado en la sesión del usuario
+          if (!userSessions.has(chatId)) {
+            userSessions.set(chatId, {});
+          }
+          const session = userSessions.get(chatId);
+          session.autorizacionStep = 'esperando_firma';
+          session.autorizacionData = {};
+          
+          console.log(`[AUTORIZACION DEBUG] Configurando sesión para chatId: ${chatId}`);
+          console.log(`[AUTORIZACION DEBUG] autorizacionStep establecido:`, session.autorizacionStep);
+          console.log(`[AUTORIZACION DEBUG] Sesión completa:`, session);
+
+          await bot.editMessageText(
+            '📝 **Paso 1 de 2: Firma**\n\n' +
+            '✍️ Por favor, envía una foto clara de tu firma.\n\n' +
+            '📋 **Instrucciones:**\n' +
+            '• Firma en una hoja blanca\n' +
+            '• Asegúrate de que la foto sea clara\n' +
+            '• La firma debe ser legible\n' +
+            '• Evita sombras o reflejos\n\n' +
+            '📷 **Envía la foto ahora:**',
+            {
+              chat_id: chatId,
+              message_id: query.message.message_id,
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '❌ Cancelar proceso', callback_data: 'autorizacion_cancelar' }]
+                ]
+              }
+            }
+          );
+        } catch (error) {
+          console.error('Error iniciando proceso de autorización:', error);
+          await bot.sendMessage(chatId, 
+            '❌ Error al iniciar el proceso. Intenta nuevamente.',
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '🔙 Volver a Consultas', callback_data: 'consulta' }]
+                ]
+              }
+            }
+          );
+        }
+      }
+
+      // Cancelar proceso de autorización
+      else if (action === 'autorizacion_cancelar') {
+        try {
+          // Limpiar el estado de la sesión
+          if (userSessions.has(chatId)) {
+            const session = userSessions.get(chatId);
+            delete session.autorizacionStep;
+            delete session.autorizacionData;
+          }
+
+          await bot.editMessageText(
+            '❌ **Proceso cancelado**\n\n' +
+            'El proceso de creación de autorización ha sido cancelado.\n' +
+            'Puedes iniciarlo nuevamente cuando desees.',
+            {
+              chat_id: chatId,
+              message_id: query.message.message_id,
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '🔙 Volver a Consultas', callback_data: 'consulta' }]
+                ]
+              }
+            }
+          );
+        } catch (error) {
+          console.error('Error cancelando proceso:', error);
+        }
+      }
+
+      // Confirmar envío de autorización al backend
+      else if (action === 'autorizacion_enviar') {
+        try {
+          const session = userSessions.get(chatId);
+          
+          if (!session || !session.autorizacionData || !session.autorizacionData.firma || !session.autorizacionData.huella) {
+            await bot.answerCallbackQuery(query.id, { 
+              text: '❌ Faltan datos. Reinicia el proceso.',
+              show_alert: true 
+            });
+            return;
+          }
+
+          // Mostrar mensaje de envío
+          await bot.editMessageText(
+            '📤 **Enviando autorización...**\n\n' +
+            '⏳ Por favor espera mientras procesamos tu autorización.',
+            {
+              chat_id: chatId,
+              message_id: query.message.message_id,
+              parse_mode: 'Markdown'
+            }
+          );
+
+          // Preparar datos para enviar al backend
+          const formData = new FormData();
+          formData.append('user_id', user.id);
+          formData.append('telegram_id', chatId);
+          formData.append('nombre', user.nombre);
+          formData.append('dni', user.dni);
+          
+          // Agregar las fotos
+          formData.append('firma', session.autorizacionData.firma.buffer, {
+            filename: `firma_${user.dni}.jpg`,
+            contentType: 'image/jpeg'
+          });
+          formData.append('huella', session.autorizacionData.huella.buffer, {
+            filename: `huella_${user.dni}.jpg`,
+            contentType: 'image/jpeg'
+          });
+
+          // Enviar al backend
+          const backendUrl = process.env.BACKEND_BASE_URL || 'http://localhost:3000';
+          const response = await axios.post(`${backendUrl}/autorizaciones/recibir`, formData, {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+              ...formData.getHeaders()
+            },
+            timeout: parseInt(process.env.BACKEND_TIMEOUT) || 10000
+          });
+
+          // Limpiar datos de la sesión
+          delete session.autorizacionStep;
+          delete session.autorizacionData;
+
+          await bot.editMessageText(
+            '✅ **Autorización creada exitosamente**\n\n' +
+            '📋 Tu autorización ha sido enviada y procesada correctamente.\n\n' +
+            `📄 **ID de autorización:** ${response.data.id || 'N/A'}\n` +
+            `📅 **Fecha:** ${new Date().toLocaleDateString('es-ES')}\n` +
+            `⏰ **Hora:** ${new Date().toLocaleTimeString('es-ES')}\n\n` +
+            '✨ Podrás consultar el estado de tu autorización en el futuro.',
+            {
+              chat_id: chatId,
+              message_id: query.message.message_id,
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '🔙 Volver a Consultas', callback_data: 'consulta' }],
+                  [{ text: '🏠 Menú Principal', callback_data: 'main_menu' }]
+                ]
+              }
+            }
+          );
+
+        } catch (error) {
+          console.error('Error enviando autorización al backend:', error);
+          
+          let errorMessage = '❌ **Error al enviar autorización**\n\n';
+          
+          if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+            errorMessage += '⏱️ El envío está tardando más de lo esperado.\n';
+            errorMessage += 'El servidor puede estar sobrecargado.';
+          } else if (error.message.includes('ENOTFOUND') || error.message.includes('ECONNREFUSED')) {
+            errorMessage += '🔌 No se puede conectar con el servidor.\n';
+            errorMessage += 'Verifica que el servicio esté disponible.';
+          } else if (error.response && error.response.status) {
+            errorMessage += `🔧 Error del servidor: ${error.response.status}\n`;
+            if (error.response.data && error.response.data.message) {
+              errorMessage += `📝 ${error.response.data.message}`;
+            }
+          } else {
+            errorMessage += '🔧 Error técnico del sistema.\n';
+            errorMessage += 'Inténtalo nuevamente en unos momentos.';
+          }
+
+          await bot.editMessageText(errorMessage, {
+            chat_id: chatId,
+            message_id: query.message.message_id,
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '🔄 Reintentar envío', callback_data: 'autorizacion_enviar' }],
+                [{ text: '🔙 Volver a Consultas', callback_data: 'consulta' }]
+              ]
+            }
+          });
+        }
+      }
+
       // Consulta - Ver crédito accesible - bloqueado para admins
       else if (action === 'consulta_credito') {
         // Verificar si el usuario es administrador
@@ -350,12 +621,16 @@ module.exports = function callbackHandler(bot) {
               mensaje += `💸 <b>Por Pagar:</b> S/${formatNumber(creditoData.por_pagar)}\n\n`;
               
               // Evaluación de reglas
-              mensaje += `📋 <b>Evaluación de Reglas:</b>\n`;
-              mensaje += `• Deuda menor al 50%: ${creditoData.regla_A ? '✅' : '❌'}\n`;
-              mensaje += `• Salieron seguidos: ${creditoData.regla_B ? '✅' : '❌'}\n`;
-              mensaje += `• Salieron descuentos completos: ${creditoData.regla_C ? '✅' : '❌'}\n\n`;
-              
+              mensaje += `📋 <b>Evaluación de Reglas:</b>\n`;              mensaje += `• Deuda menor al 50%: ${creditoData.regla_A ? '✅' : '❌'}\n`;              mensaje += `• Salieron descuentos seguidos: ${creditoData.regla_B ? '✅' : '❌'}\n`;              mensaje += `• Salieron descuentos completos: ${creditoData.regla_C ? '✅' : '❌'}\n\n`;              
               // Historial de últimos 3 pagos
+              if (creditoData.historial && creditoData.historial.length > 0) {
+                mensaje += `📊 <b>Historial de Pagos:</b>\n`;
+                creditoData.historial.forEach((pago, index) => {
+                  const estadoPago = pago.estado === 'PAGADO' ? '✅' : '❌';
+                  mensaje += `• Cuota ${pago.numero_cuota}: ${estadoPago} ${pago.fecha}\n`;
+                });
+                mensaje += '\n';
+              }
               
               
               // Decisión final
@@ -368,13 +643,8 @@ module.exports = function callbackHandler(bot) {
                 mensaje += `🎉 ¡Felicidades! Tienes crédito disponible.\n`;
                 mensaje += `🛒 Puedes realizar compras en nuestra tienda.`;
               } else if (creditoData.decision_final === 'NEGADO') {
-                mensaje += `😔 Lo sentimos, no tienes crédito disponible en este momento.\n`;
+                mensaje += `😔 Lo sentimos, no tienes crédito disponible en este momento.\n\n`;
                 mensaje += `📞 Contacta a un agente para más información.`;
-              }
-              
-              // Información adicional si existe
-              if (creditoData.message) {
-                mensaje += `\n\n📝 <b>Información:</b> ${escapeHtml(creditoData.message)}`;
               }
               
             } else {
@@ -1064,6 +1334,691 @@ module.exports = function callbackHandler(bot) {
         });
       }
 
+      // Gestión de autorizaciones
+      else if (action === 'admin_autorizaciones') {
+        if (user && user.role_id === 1) {
+          await bot.editMessageText(
+            '📝 **Gestión de Autorizaciones**\n\nSelecciona una opción:',
+            {
+              chat_id: chatId,
+              message_id: query.message.message_id,
+              parse_mode: 'Markdown',
+              ...autorizacionesAdminMenu()
+            }
+          );
+        } else {
+          await bot.answerCallbackQuery(query.id, {
+            text: '❌ No tienes permisos de administrador',
+            show_alert: true 
+          });
+        }
+      }
+
+      // Generar autorización
+      else if (action === 'admin_generar_autorizacion') {
+        if (user && user.role_id === 1) {
+          // Inicializar sesión para solicitar DNI
+          const session = userSessions.get(chatId) || {};
+          session.adminAction = 'generar_autorizacion';
+          session.lastActivity = Date.now();
+          userSessions.set(chatId, session);
+
+          await bot.editMessageText(
+            '📝 **Generar Autorización**\n\n' +
+            'Por favor, envía el DNI del usuario para el cual deseas generar una autorización.\n\n' +
+            '📋 Formato: Solo números (ej: 12345678)',
+            {
+              chat_id: chatId,
+              message_id: query.message.message_id,
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '❌ Cancelar', callback_data: 'admin_autorizaciones' }]
+                ]
+              }
+            }
+          );
+        } else {
+          await bot.answerCallbackQuery(query.id, {
+            text: '❌ No tienes permisos de administrador',
+            show_alert: true 
+          });
+        }
+      }
+
+      // Confirmar generación de autorización
+      else if (action.startsWith('admin_confirmar_generar_')) {
+        if (user && user.role_id === 1) {
+          const dni = action.replace('admin_confirmar_generar_', '');
+          const buttons = [];
+          
+          // Iniciar animación de carga
+          const loadingFrames = ['⏳', '⌛', '⏳', '⌛'];
+          let frameIndex = 0;
+          
+          // Mensaje inicial de carga
+          await bot.editMessageText(
+            `${loadingFrames[0]} <b>Generando Autorización</b>\n\n` +
+            `📋 DNI: ${dni}\n` +
+            `🔄 Procesando solicitud...\n\n` +
+            `<i>Por favor espera, esto puede tomar unos momentos.</i>`,
+            {
+              chat_id: chatId,
+              message_id: query.message.message_id,
+              parse_mode: 'HTML'
+            }
+          );
+
+          // Configurar animación de carga
+          const loadingInterval = setInterval(async () => {
+            frameIndex = (frameIndex + 1) % loadingFrames.length;
+            try {
+              await bot.editMessageText(
+                `${loadingFrames[frameIndex]} <b>Generando Autorización</b>\n\n` +
+                `📋 DNI: ${dni}\n` +
+                `🔄 Procesando solicitud...\n\n` +
+                `<i>Por favor espera, esto puede tomar unos momentos.</i>`,
+                {
+                  chat_id: chatId,
+                  message_id: query.message.message_id,
+                  parse_mode: 'HTML'
+                }
+              );
+            } catch (editError) {
+              // Si hay error al editar, detener la animación
+              clearInterval(loadingInterval);
+            }
+          }, 1000); // Cambiar frame cada segundo
+          
+          // Función para realizar reintentos con backoff exponencial
+          const makeRequestWithRetry = async (url, headers, maxRetries = 3) => {
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+              try {
+                console.log(`[ADMIN DEBUG] Intento ${attempt}/${maxRetries} - URL: ${url}`);
+                
+                const response = await axios.get(url, {
+                  headers: {
+                    ...headers,
+                    'ngrok-skip-browser-warning': 'true', // Para evitar la página de advertencia de ngrok
+                    'User-Agent': 'TelegramBot/1.0'
+                  },
+                  timeout: 30000, // 30 segundos de timeout
+                  validateStatus: function (status) {
+                    return status < 500; // Resolver para códigos de estado < 500
+                  }
+                });
+                
+                return response;
+              } catch (error) {
+                console.log(`[ADMIN DEBUG] Error en intento ${attempt}:`, error.code || error.message);
+                
+                if (attempt === maxRetries) {
+                  throw error; // Lanzar error en el último intento
+                }
+                
+                // Actualizar mensaje con información del reintento
+                try {
+                  await bot.editMessageText(
+                    `⚠️ <b>Reintentando Conexión</b>\n\n` +
+                    `📋 DNI: ${dni}\n` +
+                    `🔄 Intento ${attempt + 1}/${maxRetries}...\n\n` +
+                    `<i>Problema de conexión detectado, reintentando...</i>`,
+                    {
+                      chat_id: chatId,
+                      message_id: query.message.message_id,
+                      parse_mode: 'HTML'
+                    }
+                  );
+                } catch (editError) {
+                  console.log('[ADMIN DEBUG] Error al actualizar mensaje de reintento:', editError.message);
+                }
+                
+                // Esperar antes del siguiente intento (backoff exponencial)
+                const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Max 5 segundos
+                await new Promise(resolve => setTimeout(resolve, delay));
+              }
+            }
+          };
+          
+          try {
+            // Llamar al backend para generar la autorización con reintentos
+            const backendUrl = process.env.BACKEND_BASE_URL;
+            console.log(`[ADMIN DEBUG] Generando autorización para DNI: ${dni}`);
+            console.log(`[ADMIN DEBUG] URL: ${backendUrl}/autorizaciones/generar/${dni}`);
+            
+            const response = await makeRequestWithRetry(
+              `${backendUrl}/autorizaciones/generar/${dni}`,
+              {
+                'Authorization': `Bearer ${process.env.BACKEND_API_KEY}`,
+                'X-API-Key': process.env.BACKEND_API_KEY
+              }
+            );
+
+            // Detener animación de carga
+            clearInterval(loadingInterval);
+
+            console.log(`[ADMIN DEBUG] Respuesta del backend:`, response.data);
+            console.log(`[ADMIN DEBUG] Status code:`, response.status);
+
+            // Verificar si la respuesta es exitosa
+            if (response.status >= 200 && response.status < 300 && response.data && response.data.success) {
+              let mensaje = '✅ <b>Autorización Generada Exitosamente</b>\n\n' +
+                `📋 DNI: ${dni}\n` +
+                `📅 Fecha: ${new Date().toLocaleDateString('es-ES')}\n\n`;
+              
+              if (response.data.pdf_generated) {
+                mensaje += '📄 PDF generado correctamente\n';
+                // Si el PDF fue generado, agregar botón de descarga
+                buttons.unshift([{ text: '📥 Descargar PDF', callback_data: `admin_download_pdf_${dni}` }]);
+              } else {
+                mensaje += '⚠️ PDF no generado automáticamente\n\n';
+              }
+              
+              mensaje += '🔔 El proceso de autorización ha sido iniciado.';
+
+              buttons.push([{ text: '🔙 Volver al Menú', callback_data: 'admin_autorizaciones' }]);
+
+              await bot.editMessageText(mensaje, {
+                chat_id: chatId,
+                message_id: query.message.message_id,
+                parse_mode: 'HTML',
+                reply_markup: {
+                  inline_keyboard: buttons
+                }
+              });
+            } else {
+              // Manejar respuestas no exitosas del servidor
+              let errorMessage = 'Error desconocido del servidor';
+              
+              if (response.status === 404) {
+                errorMessage = 'Usuario no encontrado con ese DNI';
+              } else if (response.status === 400) {
+                errorMessage = response.data?.message || 'Datos inválidos enviados al servidor';
+              } else if (response.status >= 500) {
+                errorMessage = 'Error interno del servidor';
+              } else if (response.data && response.data.message) {
+                errorMessage = response.data.message;
+              }
+              
+              console.log(`[ADMIN DEBUG] Error en respuesta: status=${response.status}, success=${response.data?.success}, message=${response.data?.message}`);
+              
+              await bot.editMessageText(
+                '❌ <b>Error al Generar Autorización</b>\n\n' +
+                `${errorMessage}\n\n` +
+                `<i>Código de estado: ${response.status}</i>`,
+                {
+                  chat_id: chatId,
+                  message_id: query.message.message_id,
+                  parse_mode: 'HTML',
+                  reply_markup: {
+                    inline_keyboard: [
+                      [{ text: '🔄 Intentar de nuevo', callback_data: 'admin_generar_autorizacion' }],
+                      [{ text: '🔙 Volver al Menú', callback_data: 'admin_autorizaciones' }]
+                    ]
+                  }
+                }
+              );
+            }
+          } catch (error) {
+            // Detener animación de carga en caso de error
+            clearInterval(loadingInterval);
+            
+            console.error('[ADMIN DEBUG] Error completo al generar autorización:', error);
+            console.error('[ADMIN DEBUG] Error response:', error.response?.data);
+            console.error('[ADMIN DEBUG] Error code:', error.code);
+            console.error('[ADMIN DEBUG] Error status:', error.response?.status);
+            
+            let errorMessage = 'Error de conexión con el servidor';
+            let errorDetails = '';
+            
+            if (error.code === 'ECONNRESET') {
+              errorMessage = 'Conexión interrumpida por el servidor';
+              errorDetails = 'El servidor cerró la conexión inesperadamente. Esto puede deberse a:\n• Problemas de red\n• Servidor sobrecargado\n• Timeout del servidor';
+            } else if (error.code === 'ECONNREFUSED') {
+              errorMessage = 'No se pudo conectar al servidor';
+              errorDetails = 'El servidor no está disponible o no responde.';
+            } else if (error.code === 'ETIMEDOUT') {
+              errorMessage = 'Timeout de conexión';
+              errorDetails = 'El servidor tardó demasiado en responder.';
+            } else if (error.response?.status === 404) {
+              errorMessage = 'Usuario no encontrado con ese DNI';
+              errorDetails = 'Verifica que el DNI sea correcto.';
+            } else if (error.response?.status === 400) {
+              errorMessage = error.response.data?.message || 'Datos inválidos';
+              errorDetails = 'Los datos enviados no son válidos.';
+            } else if (error.response?.status >= 500) {
+              errorMessage = 'Error interno del servidor';
+              errorDetails = 'Hay un problema en el servidor backend.';
+            } else if (error.message.includes('ngrok')) {
+              errorMessage = 'Problema con el túnel ngrok';
+              errorDetails = 'El túnel ngrok puede estar inactivo o tener problemas.';
+            }
+
+            await bot.editMessageText(
+              '❌ <b>Error al Generar Autorización</b>\n\n' +
+              `🔍 <b>Problema:</b> ${errorMessage}\n\n` +
+              `📝 <b>Detalles:</b>\n${errorDetails}\n\n` +
+              `⚠️ <b>Código:</b> ${error.code || 'N/A'}\n` +
+              `📊 <b>Estado HTTP:</b> ${error.response?.status || 'N/A'}`,
+              {
+                chat_id: chatId,
+                message_id: query.message.message_id,
+                parse_mode: 'HTML',
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: '🔄 Intentar de nuevo', callback_data: 'admin_generar_autorizacion' }],
+                    [{ text: '🔙 Volver al Menú', callback_data: 'admin_autorizaciones' }]
+                  ]
+                }
+              }
+            );
+          }
+        } else {
+          await bot.answerCallbackQuery(query.id, {
+            text: '❌ No tienes permisos de administrador',
+            show_alert: true 
+          });
+        }
+      }
+
+      // Descargar PDF de autorización
+      else if (action.startsWith('admin_download_pdf_')) {
+        if (user && user.role_id === 1) {
+          const dni = action.replace('admin_download_pdf_', '');
+          
+          // Animación de carga para descarga
+          const downloadFrames = ['📥', '📄', '📥', '📄'];
+          let frameIndex = 0;
+          
+          // Mensaje inicial de descarga
+          await bot.editMessageText(
+            `${downloadFrames[0]} <b>Preparando Descarga</b>\n\n` +
+            `📋 DNI: ${dni}\n` +
+            `🔄 Obteniendo archivo PDF...\n\n` +
+            `<i>Por favor espera...</i>`,
+            {
+              chat_id: chatId,
+              message_id: query.message.message_id,
+              parse_mode: 'HTML'
+            }
+          );
+
+          // Configurar animación de descarga
+          const downloadInterval = setInterval(async () => {
+            frameIndex = (frameIndex + 1) % downloadFrames.length;
+            try {
+              await bot.editMessageText(
+                `${downloadFrames[frameIndex]} <b>Preparando Descarga</b>\n\n` +
+                `📋 DNI: ${dni}\n` +
+                `🔄 Obteniendo archivo PDF...\n\n` +
+                `<i>Por favor espera...</i>`,
+                {
+                  chat_id: chatId,
+                  message_id: query.message.message_id,
+                  parse_mode: 'HTML'
+                }
+              );
+            } catch (editError) {
+              clearInterval(downloadInterval);
+            }
+          }, 800); // Cambiar frame cada 800ms
+          
+          try {
+            const backendUrl = process.env.BACKEND_BASE_URL;
+            console.log(`[ADMIN DEBUG] Descargando PDF para DNI: ${dni}`);
+            
+            // Obtener el PDF del backend
+            const response = await axios.get(`${backendUrl}/autorizaciones/download_pdf/${dni}`, {
+              headers: {
+                'Authorization': `Bearer ${process.env.BACKEND_API_KEY}`,
+                'X-API-Key': process.env.BACKEND_API_KEY
+              },
+              responseType: 'stream'
+            });
+
+            // Detener animación de descarga
+            clearInterval(downloadInterval);
+
+            // Actualizar mensaje a "enviando"
+            await bot.editMessageText(
+              `📤 <b>Enviando Archivo</b>\n\n` +
+              `📋 DNI: ${dni}\n` +
+              `📄 Preparando envío del PDF...`,
+              {
+                chat_id: chatId,
+                message_id: query.message.message_id,
+                parse_mode: 'HTML'
+              }
+            );
+
+            // Crear un archivo temporal para enviar
+            const fs = require('fs');
+            const path = require('path');
+            const tempDir = path.join(__dirname, '../../temp');
+            
+            // Crear directorio temporal si no existe
+            if (!fs.existsSync(tempDir)) {
+              fs.mkdirSync(tempDir, { recursive: true });
+            }
+
+            const tempFilePath = path.join(tempDir, `autorizacion_${dni}_${Date.now()}.pdf`);
+            const writer = fs.createWriteStream(tempFilePath);
+
+            response.data.pipe(writer);
+
+            writer.on('finish', async () => {
+              try {
+                // Iniciar animación de envío
+                const sendingFrames = ['📤', '📨', '📧', '📩'];
+                let sendFrameIndex = 0;
+                
+                // Mensaje inicial de envío
+                await bot.editMessageText(
+                  `${sendingFrames[0]} <b>Enviando Archivo</b>\n\n` +
+                  `📋 DNI: ${dni}\n` +
+                  `📄 Subiendo PDF a Telegram...\n\n` +
+                  `<i>Esto puede tomar unos momentos...</i>`,
+                  {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    parse_mode: 'HTML'
+                  }
+                );
+
+                // Configurar animación de envío
+                const sendingInterval = setInterval(async () => {
+                  sendFrameIndex = (sendFrameIndex + 1) % sendingFrames.length;
+                  try {
+                    await bot.editMessageText(
+                      `${sendingFrames[sendFrameIndex]} <b>Enviando Archivo</b>\n\n` +
+                      `📋 DNI: ${dni}\n` +
+                      `📄 Subiendo PDF a Telegram...\n\n` +
+                      `<i>Esto puede tomar unos momentos...</i>`,
+                      {
+                        chat_id: chatId,
+                        message_id: query.message.message_id,
+                        parse_mode: 'HTML'
+                      }
+                    );
+                  } catch (editError) {
+                    clearInterval(sendingInterval);
+                  }
+                }, 600); // Cambiar frame cada 600ms para envío
+
+                // Obtener información del archivo para mostrar progreso
+                const fs = require('fs');
+                const stats = fs.statSync(tempFilePath);
+                const fileSizeInMB = (stats.size / (1024 * 1024)).toFixed(2);
+
+                // Actualizar mensaje con información del archivo
+                setTimeout(async () => {
+                  try {
+                    await bot.editMessageText(
+                      `${sendingFrames[sendFrameIndex]} <b>Enviando Archivo</b>\n\n` +
+                      `📋 DNI: ${dni}\n` +
+                      `📄 Archivo: ${fileSizeInMB} MB\n` +
+                      `🔄 Subiendo a Telegram...\n\n` +
+                      `<i>Procesando documento...</i>`,
+                      {
+                        chat_id: chatId,
+                        message_id: query.message.message_id,
+                        parse_mode: 'HTML'
+                      }
+                    );
+                  } catch (editError) {
+                    console.log('[ADMIN DEBUG] Error al actualizar mensaje con tamaño:', editError.message);
+                  }
+                }, 1500);
+
+                // Enviar el PDF al usuario
+                await bot.sendDocument(chatId, tempFilePath, {
+                  caption: `📄 <b>Autorización Completa</b>\n\n📋 DNI: ${dni}\n📅 Generado: ${new Date().toLocaleDateString('es-ES')}\n📊 Tamaño: ${fileSizeInMB} MB`,
+                  parse_mode: 'HTML'
+                });
+
+                // Detener animación de envío
+                clearInterval(sendingInterval);
+
+                // Actualizar mensaje de éxito con animación final
+                const successFrames = ['✅', '🎉', '✅', '🎉'];
+                let successFrameIndex = 0;
+                
+                const successInterval = setInterval(async () => {
+                  try {
+                    await bot.editMessageText(
+                      `${successFrames[successFrameIndex]} <b>PDF Enviado Exitosamente</b>\n\n` +
+                      `📋 DNI: ${dni}\n` +
+                      `📄 Archivo enviado correctamente\n` +
+                      `📊 Tamaño: ${fileSizeInMB} MB`,
+                      {
+                        chat_id: chatId,
+                        message_id: query.message.message_id,
+                        parse_mode: 'HTML',
+                        reply_markup: {
+                          inline_keyboard: [
+                            [{ text: '🔙 Volver al Menú', callback_data: 'admin_autorizaciones' }]
+                          ]
+                        }
+                      }
+                    );
+                    successFrameIndex = (successFrameIndex + 1) % successFrames.length;
+                  } catch (editError) {
+                    clearInterval(successInterval);
+                  }
+                }, 500);
+
+                // Detener animación de éxito después de 3 segundos
+                setTimeout(() => {
+                  clearInterval(successInterval);
+                  // Mensaje final estático
+                  bot.editMessageText(
+                    `✅ <b>PDF Enviado Exitosamente</b>\n\n` +
+                    `📋 DNI: ${dni}\n` +
+                    `📄 El archivo ha sido enviado correctamente\n` +
+                    `📊 Tamaño: ${fileSizeInMB} MB`,
+                    {
+                      chat_id: chatId,
+                      message_id: query.message.message_id,
+                      parse_mode: 'HTML',
+                      reply_markup: {
+                        inline_keyboard: [
+                          [{ text: '🔙 Volver al Menú', callback_data: 'admin_autorizaciones' }]
+                        ]
+                      }
+                    }
+                  ).catch(err => console.log('[ADMIN DEBUG] Error en mensaje final:', err.message));
+                }, 3000);
+
+                // Limpiar archivo temporal después de un tiempo
+                setTimeout(() => {
+                  if (fs.existsSync(tempFilePath)) {
+                    fs.unlinkSync(tempFilePath);
+                    console.log(`[ADMIN DEBUG] Archivo temporal eliminado: ${tempFilePath}`);
+                  }
+                }, 30000); // 30 segundos
+
+              } catch (sendError) {
+                console.error('[ADMIN DEBUG] Error al enviar PDF:', sendError);
+                
+                // Determinar tipo de error específico
+                let errorMessage = 'No se pudo enviar el archivo.';
+                let errorDetails = '';
+                
+                if (sendError.message.includes('file size')) {
+                  errorMessage = 'El archivo es demasiado grande';
+                  errorDetails = 'El PDF excede el límite de tamaño de Telegram (50MB).';
+                } else if (sendError.message.includes('network')) {
+                  errorMessage = 'Error de conexión';
+                  errorDetails = 'Problema de red al subir el archivo.';
+                } else if (sendError.message.includes('timeout')) {
+                  errorMessage = 'Timeout al enviar';
+                  errorDetails = 'El envío tardó demasiado tiempo.';
+                }
+                
+                await bot.editMessageText(
+                  `❌ <b>Error al Enviar PDF</b>\n\n` +
+                  `🔍 <b>Problema:</b> ${errorMessage}\n` +
+                  `📝 <b>Detalles:</b> ${errorDetails}\n\n` +
+                  `<i>Inténtalo más tarde o contacta al administrador.</i>`,
+                  {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    parse_mode: 'HTML',
+                    reply_markup: {
+                      inline_keyboard: [
+                        [{ text: '🔄 Intentar de nuevo', callback_data: `admin_download_pdf_${dni}` }],
+                        [{ text: '🔙 Volver al Menú', callback_data: 'admin_autorizaciones' }]
+                      ]
+                    }
+                  }
+                );
+              }
+            });
+
+            writer.on('error', async (writeError) => {
+              clearInterval(downloadInterval);
+              console.error('[ADMIN DEBUG] Error al escribir archivo temporal:', writeError);
+              await bot.editMessageText(
+                '❌ <b>Error al Procesar PDF</b>\n\nNo se pudo procesar el archivo. Inténtalo más tarde.',
+                {
+                  chat_id: chatId,
+                  message_id: query.message.message_id,
+                  parse_mode: 'HTML',
+                  reply_markup: {
+                    inline_keyboard: [
+                      [{ text: '🔄 Intentar de nuevo', callback_data: `admin_download_pdf_${dni}` }],
+                      [{ text: '🔙 Volver al Menú', callback_data: 'admin_autorizaciones' }]
+                    ]
+                  }
+                }
+              );
+            });
+
+          } catch (error) {
+            clearInterval(downloadInterval);
+            console.error('[ADMIN DEBUG] Error al descargar PDF:', error);
+            
+            let errorMessage = 'No se pudo descargar el PDF.';
+            
+            if (error.response?.status === 404) {
+              errorMessage = 'PDF no encontrado para este DNI.';
+            } else if (error.response?.status === 500) {
+              errorMessage = 'Error interno del servidor.';
+            }
+
+            await bot.editMessageText(
+              `❌ <b>Error de Descarga</b>\n\n${errorMessage}`,
+              {
+                chat_id: chatId,
+                message_id: query.message.message_id,
+                parse_mode: 'HTML',
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: '🔄 Intentar de nuevo', callback_data: `admin_download_pdf_${dni}` }],
+                    [{ text: '🔙 Volver al Menú', callback_data: 'admin_autorizaciones' }]
+                  ]
+                }
+              }
+            );
+          }
+        } else {
+          await bot.answerCallbackQuery(query.id, {
+            text: '❌ No tienes permisos de administrador',
+            show_alert: true 
+          });
+        }
+      }
+
+      // Listar autorizaciones activas
+      else if (action === 'admin_listar_autorizaciones' || action.startsWith('admin_autorizaciones_page_')) {
+        if (user && user.role_id === 1) {
+          let page = 1;
+          if (action.startsWith('admin_autorizaciones_page_')) {
+            page = parseInt(action.split('_')[3]) || 1;
+          }
+
+          try {
+            const backendUrl = process.env.BACKEND_BASE_URL;
+            const response = await axios.get(`${backendUrl}/autorizaciones/activas?page=${page}&limit=5`, {
+              headers: {
+                'Authorization': `Bearer ${process.env.BACKEND_API_KEY}`,
+                'X-API-Key': process.env.BACKEND_API_KEY
+              }
+            });
+
+            if (response.data.success) {
+              const { autorizaciones, total, totalPages, currentPage } = response.data;
+              
+              let mensaje = '📋 **Autorizaciones Activas**\n\n';
+              
+              if (autorizaciones.length === 0) {
+                mensaje += '📭 No hay autorizaciones activas en este momento.';
+              } else {
+                mensaje += `📊 Total: ${total} autorizaciones\n`;
+                mensaje += `📄 Página ${currentPage} de ${totalPages}\n\n`;
+                
+                autorizaciones.forEach((auth, index) => {
+                  const numero = ((currentPage - 1) * 5) + index + 1;
+                  const fecha = new Date(auth.fecha_creacion).toLocaleDateString('es-ES');
+                  const estado = auth.completada ? '✅ Completada' : '⏳ Pendiente';
+                  
+                  mensaje += `${numero}. **${auth.usuario.nombre}**\n`;
+                  mensaje += `   📋 DNI: ${auth.usuario.dni}\n`;
+                  mensaje += `   🆔 ID: ${auth.id}\n`;
+                  mensaje += `   📅 Fecha: ${fecha}\n`;
+                  mensaje += `   📊 Estado: ${estado}\n\n`;
+                });
+              }
+
+              await bot.editMessageText(mensaje, {
+                chat_id: chatId,
+                message_id: query.message.message_id,
+                parse_mode: 'Markdown',
+                ...paginacionAutorizaciones(currentPage, totalPages)
+              });
+            } else {
+              await bot.editMessageText(
+                '❌ **Error al Obtener Autorizaciones**\n\n' +
+                `${response.data.message || 'Error desconocido'}`,
+                {
+                  chat_id: chatId,
+                  message_id: query.message.message_id,
+                  parse_mode: 'Markdown',
+                  reply_markup: {
+                    inline_keyboard: [
+                      [{ text: '🔄 Intentar de nuevo', callback_data: 'admin_listar_autorizaciones' }],
+                      [{ text: '🔙 Volver al Menú', callback_data: 'admin_autorizaciones' }]
+                    ]
+                  }
+                }
+              );
+            }
+          } catch (error) {
+            console.error('Error al listar autorizaciones:', error);
+            await bot.editMessageText(
+              '❌ **Error de Conexión**\n\n' +
+              'No se pudo conectar con el servidor. Inténtalo más tarde.',
+              {
+                chat_id: chatId,
+                message_id: query.message.message_id,
+                parse_mode: 'Markdown',
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: '🔄 Intentar de nuevo', callback_data: 'admin_listar_autorizaciones' }],
+                    [{ text: '🔙 Volver al Menú', callback_data: 'admin_autorizaciones' }]
+                  ]
+                }
+              }
+            );
+          }
+        } else {
+          await bot.answerCallbackQuery(query.id, {
+            text: '❌ No tienes permisos de administrador',
+            show_alert: true 
+          });
+        }
+      }
+
       // Manejar detalles de usuario específico
       else if (action.startsWith('user_detail_')) {
         const targetUserId = action.split('_')[2];
@@ -1386,7 +2341,13 @@ module.exports = function callbackHandler(bot) {
       }
 
       // Manejar callbacks de sesión
-      else if (action === 'session_continue') {
+      if (action === 'session_continue') {
+        // Limpiar el estado de warning
+        if (session.warningActive) {
+          session.warningActive = false;
+          userSessions.set(chatId, session);
+        }
+        
         await bot.editMessageText(
           '✅ Sesión renovada. ¡Continuemos!\n\n' +
           'Usa el menú persistente de abajo para navegar.',
@@ -1398,9 +2359,16 @@ module.exports = function callbackHandler(bot) {
         
         // Renovar la sesión
         renewSessionTimeout(bot, chatId);
+        return;
       }
 
       else if (action === 'session_exit') {
+        // Limpiar el estado de warning
+        if (session.warningActive) {
+          session.warningActive = false;
+          userSessions.set(chatId, session);
+        }
+        
         await bot.editMessageText(
           '👋 ¡Hasta luego! Usa /start cuando quieras volver.',
           {
@@ -1422,6 +2390,7 @@ module.exports = function callbackHandler(bot) {
         setTimeout(async () => {
           await clearUserSession(bot, chatId, false); // false = enviar mensaje final
         }, 3000);
+        return;
       }
 
     } catch (error) {
