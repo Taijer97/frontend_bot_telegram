@@ -1,0 +1,1643 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configurador de Huella en Tiempo Real</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2c3e50, #34495e);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .content {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+            padding: 30px;
+        }
+
+        .panel {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 25px;
+            border: 1px solid #e9ecef;
+        }
+
+        .panel h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+
+        .dni-search {
+            width: 100%;
+            margin-bottom: 25px;
+            display: flex;
+            flex-direction: row;
+            gap: 10px;
+        }
+
+        .dni-input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1.1em;
+            margin-bottom: 10px;
+        }
+
+        .dni-input:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .search-btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            width: 20%;
+            margin-bottom: 10px;
+        }
+
+        .search-btn:hover {
+            background: #2980b9;
+        }
+
+        .image-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .image-container {
+            text-align: left;
+            margin-bottom: 20px;
+            position: relative;
+        }
+
+        .image-preview {
+            max-width: 100%;
+            max-height: 300px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .canvas-container {
+            position: relative;
+            display: inline-block;
+        }
+
+        .selection-overlay {
+            position: absolute;
+            border: 2px dashed #e74c3c;
+            background: rgba(231, 76, 60, 0.1);
+            pointer-events: none;
+            display: none;
+        }
+
+        .crop-controls {
+            display: none;
+            margin-top: 10px;
+            gap: 10px;
+        }
+
+        .crop-btn {
+            background: #27ae60;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+
+        .crop-btn:hover {
+            background: #219a52;
+        }
+
+        .crop-btn.cancel {
+            background: #e74c3c;
+        }
+
+        .crop-btn.cancel:hover {
+            background: #c0392b;
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        .control-group label {
+            display: block;
+            font-weight: 600;
+            color: #34495e;
+            margin-bottom: 8px;
+            font-size: 1em;
+        }
+
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .slider {
+            flex: 1;
+            height: 6px;
+            border-radius: 3px;
+            background: #ddd;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #3498db;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .value-display {
+            background: #3498db;
+            color: white;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-weight: bold;
+            min-width: 45px;
+            text-align: center;
+            font-size: 0.9em;
+        }
+
+        .rgb-group {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .rgb-control label {
+            font-size: 0.8em;
+            margin-bottom: 3px;
+        }
+
+        .color-preview {
+            width: 28px;
+            height: 30px;
+            border-radius: 50%;
+            border: 2px solid #ddd;
+            margin-top: 8px;
+        }
+
+        .canvas-container {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .processing-canvas {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            max-width: 100%;
+        }
+
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            font-weight: bold;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.info {
+            background: #cce7ff;
+            color: #004085;
+            border: 1px solid #b3d7ff;
+        }
+
+        .process-btn {
+            background: #27ae60;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .process-btn:hover {
+            background: #219a52;
+        }
+
+        .process-btn:disabled {
+            background: #95a5a6;
+            cursor: not-allowed;
+        }
+
+        .download-btn {
+            width: 100%;
+            background: #e67e22;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+            margin-top: 10px;
+        }
+
+        .download-btn:hover {
+            background: #d35400;
+        }
+
+        .accordion-item {
+        border-top: 1px solid #ddd;
+        }
+
+        .accordion-header {
+            cursor: pointer;
+            background: #f0f0f0;
+            padding: 10px 15px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: background 0.3s;
+            border-radius: 8px;
+        }
+
+        .accordion-header:hover {
+            background: #e8e8e8;
+        }
+
+        .accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            padding: 0 15px;
+        }
+
+        .accordion-item.active .accordion-content {
+            max-height: 600px; /* Ajusta según el contenido */
+            padding: 10px 15px;
+        }
+
+        .slider-container {
+            margin: 10px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .value-display {
+            width: 40px;
+            text-align: right;
+            font-weight: bold;
+        }
+
+        .color-preview {
+            width: 50px;
+            height: 20px;
+            border-radius: 6px;
+            border: 1px solid #aaa;
+            margin-bottom: 10px;
+        }
+
+        /* === MEJORAS RESPONSIVAS === */
+        @media (max-width: 1200px) {
+            .content {
+                grid-template-columns: 1fr 1fr;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+            
+            .content {
+                grid-template-columns: 1fr;
+                gap: 15px;
+                padding: 20px;
+            }
+            
+            .header {
+                padding: 20px;
+            }
+            
+            .header h1 {
+                font-size: 1.8em;
+            }
+            
+            .panel {
+                padding: 20px;
+            }
+            
+            .rgb-group {
+                grid-template-columns: 1fr;
+                gap: 15px;
+            }
+            
+            .slider-container {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 8px;
+            }
+            
+            .value-display {
+                text-align: center;
+                min-width: auto;
+            }
+            
+            .image-preview {
+                max-height: 250px;
+            }
+            
+            .processing-canvas {
+                max-width: 100%;
+                height: auto;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .header h1 {
+                font-size: 1.5em;
+            }
+            
+            .header p {
+                font-size: 0.9em;
+            }
+            
+            .panel {
+                padding: 15px;
+            }
+            
+            .panel h2 {
+                font-size: 1.1em;
+            }
+            
+            .dni-input {
+                font-size: 16px; /* Evita zoom en iOS */
+            }
+            
+            .search-btn, .process-btn {
+                padding: 15px 20px;
+                font-size: 1.1em;
+            }
+            
+            .image-preview {
+                max-height: 200px;
+            }
+            
+            .crop-controls {
+                flex-direction: column;
+                gap: 8px;
+            }
+            
+            .crop-btn {
+                width: 100%;
+                padding: 12px;
+            }
+        }
+
+        /* === MEJORAS PARA PANTALLAS TÁCTILES === */
+        @media (hover: none) and (pointer: coarse) {
+            .slider::-webkit-slider-thumb {
+                width: 24px;
+                height: 24px;
+            }
+            
+            .search-btn, .process-btn, .crop-btn {
+                min-height: 44px; /* Tamaño mínimo recomendado para touch */
+            }
+            
+            .dni-input {
+                min-height: 44px;
+            }
+        }
+
+        /* === MEJORAS PARA MODO LANDSCAPE EN MÓVILES === */
+        @media (max-width: 768px) and (orientation: landscape) {
+            .content {
+                grid-template-columns: 1fr 1fr;
+            }
+            
+            .header {
+                padding: 15px;
+            }
+            
+            .header h1 {
+                font-size: 1.6em;
+            }
+        }
+
+        /* === MEJORAS PARA PANTALLAS GRANDES === */
+        @media (min-width: 1600px) {
+            .container {
+                max-width: 1600px;
+            }
+            
+            .content {
+                grid-template-columns: repeat(4, 1fr);
+            }
+            
+            .header h1 {
+                font-size: 3em;
+            }
+        }
+
+        /* === MEJORAS DE ACCESIBILIDAD === */
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+
+        /* === MEJORAS PARA MODO OSCURO === */
+        @media (prefers-color-scheme: light) {
+            .panel {
+                background: #2c3e50;
+                color: #ecf0f1;
+                border-color: #34495e;
+            }
+            
+            .dni-input {
+                background: #34495e;
+                color: #ecf0f1;
+                border-color: #4a5f7a;
+            }
+            
+            .dni-input:focus {
+                border-color: #3498db;
+            }
+            
+            .image-preview, .processing-canvas {
+                border-color: #4a5f7a;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✍️ Configurador de Huella</h1>
+        </div>
+        <div id="status" class="status info" style="display: none;"></div>
+        <div class="content">
+            <!-- Panel de búsqueda y imagen original -->
+            <div class="panel">
+                <h2>📁 Búsqueda de Imagen</h2>
+                
+                <div class="dni-search">
+                    <input type="text" id="dniInput" class="dni-input" placeholder="Ingresa el DNI (ej: 43024358)" maxlength="8">
+                    <button class="search-btn" onclick="buscarImagen()">🔍</button>
+                </div>
+
+                <div class="image-panel">
+                    <div class="image-container">
+                        <img id="originalImage" class="image-preview" style="display: none;" alt="Imagen original">
+                        <p id="noImageText" style="color: #7f8c8d;">No hay imagen cargada</p>
+                    </div>
+
+                    <div class="image-container_1">
+                        <div class="canvas-container">
+                            <canvas id="resultCanvas" class="image-preview" style="display: none;"></canvas>
+                            <div id="selectionOverlay" class="selection-overlay"></div>
+                        </div>
+                        <p id="noResultText" style="color: #7f8c8d;">Busca una imagen y ajusta los parámetros</p>
+                        
+                        <!-- Controles de corte manual -->
+                        <div id="cropControls" class="crop-controls" style="display: flex; justify-content: center; margin-top: 10px;">
+                            <button class="crop-btn" onclick="aplicarCorteManual()">✂️ Aplicar Corte</button>
+                            <button class="crop-btn cancel" onclick="cancelarCorteManual()">❌ Cancelar</button>
+                        </div>
+                        
+                        <div id="cropInstructions" style="display: none;">
+                            <div class="mobile-instructions" style="display: none;">
+                                📱 <strong>Instrucciones para móvil:</strong><br>
+                                1. Toca y mantén presionado donde quieres empezar<br>
+                                2. Arrastra hasta donde quieres terminar<br>
+                                3. Suelta para confirmar la selección
+                            </div>
+                            <div class="desktop-instructions" style="display: none;">
+                                🖱️ <strong>Instrucciones para escritorio:</strong><br>
+                                Arrastra para seleccionar el área a recortar
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h3>🎨 Rango RGB Lower</h3>
+                        
+                    </div>
+                    <label style="display: flex; align-items: center; gap: 5px; font-size: 0.9em;">
+                            <input type="checkbox" id="independentLower" onchange="toggleIndependentLower()">
+                            🔧 Controles Independientes
+                            <div class="color-preview" id="lowerPreview"></div>
+                        </label>
+
+                    
+
+                    <!-- Controles sincronizados -->
+                    <div id="syncedControls">
+                        <div class="slider-container">
+                            <label for="lowerRGB">RGB (Sincronizado):</label>
+                            <input type="range" id="lowerRGB" min="0" max="255" value="140" class="slider">
+                            <span id="lowerRGBValue" class="value-display">140</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Controles independientes -->
+                    <div id="independentControls" style="display: none;">
+                        <div class="slider-container">
+                            <label for="lowerR">R:</label>
+                            <input type="range" id="lowerR" min="0" max="255" value="140" class="slider">
+                            <span id="lowerRValueIndep" class="value-display">140</span>
+                        </div>
+                        <div class="slider-container">
+                            <label for="lowerG">G:</label>
+                            <input type="range" id="lowerG" min="0" max="255" value="140" class="slider">
+                            <span id="lowerGValueIndep" class="value-display">140</span>
+                        </div>
+                        <div class="slider-container">
+                            <label for="lowerB">B:</label>
+                            <input type="range" id="lowerB" min="0" max="255" value="140" class="slider">
+                            <span id="lowerBValueIndep" class="value-display">140</span>
+                        </div>
+                    </div>
+                    
+                    <div style="font-size: 0.8em; color: #666; margin-top: 5px;">
+                        R: <span id="lowerRValue">140</span> | 
+                        G: <span id="lowerGValue">140</span> | 
+                        B: <span id="lowerBValue">140</span>
+                    </div>
+                </div>
+                <div class="image-container">
+                    <h3>📊 Información de la imagen:</h3>
+                    <div id="imageInfo" style="font-size: 0.9em; color: #7f8c8d;">
+                        Selecciona una imagen para ver detalles
+                    </div>
+                </div>
+            </div>
+
+            <!-- Panel de controles -->
+            <div class="panel">
+                <h2>⚙️ Controles de Rango de Color</h2>
+
+                <!-- 🔹 Acordeón: Threshold Canal Alfa -->
+                <div class="accordion-item">
+                    <div class="accordion-header">🔧 Threshold Canal Alfa <span>▼</span></div>
+                    <div class="accordion-content">
+                        <div class="slider-container">
+                            <label for="alphaThreshold">Valor Threshold:</label>
+                            <input type="range" id="alphaThreshold" min="0" max="255" value="200" class="slider">
+                            <span id="alphaThresholdValue" class="value-display">200</span>
+                        </div>
+                        <div class="slider-container">
+                            <label for="alphaMaxValue">Valor Máximo:</label>
+                            <input type="range" id="alphaMaxValue" min="0" max="255" value="255" class="slider">
+                            <span id="alphaMaxValueValue" class="value-display">255</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 🔹 Acordeón: Rango RGB Upper -->
+                <div class="accordion-item">
+                    <div class="accordion-header">🎨 Rango RGB Upper <span>▼</span></div>
+                    <div class="accordion-content">
+                        <div class="color-preview" id="upperPreview"></div>
+                        <div class="slider-container">
+                            <label for="upperR">R:</label>
+                            <input type="range" id="upperR" min="0" max="255" value="255" class="slider">
+                            <span id="upperRValue" class="value-display">255</span>
+                        </div>
+                        <div class="slider-container">
+                            <label for="upperG">G:</label>
+                            <input type="range" id="upperG" min="0" max="255" value="255" class="slider">
+                            <span id="upperGValue" class="value-display">255</span>
+                        </div>
+                        <div class="slider-container">
+                            <label for="upperB">B:</label>
+                            <input type="range" id="upperB" min="0" max="255" value="255" class="slider">
+                            <span id="upperBValue" class="value-display">255</span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Panel de resultado -->
+            <div class="panel">
+                <h2>🖼️ Resultado Procesado</h2>
+                
+                <!-- Controles de visualización -->
+                <div class="control-group" style="margin-bottom: 20px;">
+                    <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
+                        <label style="display: flex; align-items: center; gap: 5px;">
+                            <input type="radio" name="viewMode" value="normal" checked onchange="cambiarModoVista()">
+                            🖼️ Normal
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 5px;">
+                            <input type="radio" name="viewMode" value="negative" onchange="cambiarModoVista()">
+                            🔄 Negativo
+                        </label>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 5px;">
+                        <label style="display: flex; align-items: center; gap: 5px;">
+                            <input type="checkbox" id="autoCrop" checked onchange="toggleCropMode()">
+                            ✂️ Recorte Automático
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 5px;">
+                            <input type="checkbox" id="manualCrop" onchange="toggleCropMode()">
+                            ✂️ Recorte Manual
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Controles de color final -->
+                <div class="control-group" style="margin-bottom: 20px;">
+                    <h3>🎨 Color Final</h3>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                            <label style="display: flex; align-items: center; gap: 5px;">
+                                <input type="radio" name="colorMode" value="original" checked onchange="cambiarColorFinal()">
+                                🖤 Original (Negro)
+                            </label>
+                        </div>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <label style="display: flex; align-items: center; gap: 5px;">
+                                <input type="radio" name="colorMode" value="custom" onchange="cambiarColorFinal()">
+                                🎨 Personalizado:
+                            </label>
+                            <input type="color" id="customColor" value="#000000" onchange="cambiarColorFinal()" style="width: 40px; height: 30px; border: none; border-radius: 5px;">
+                            <span id="customColorValue" style="font-size: 0.8em; color: #666;">#000000</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <button onclick="resetearValores()" style="background: #e74c3c; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; width: 100%; margin-top: 10px;">
+                        🔄 Resetear Valores
+                    </button>
+                </div>
+
+                <button class="download-btn" id="saveBtn" onclick="guardarResultado()" style="display: none;">
+                    💾 Guardar Huella
+                </button>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // === NUEVA FUNCIONALIDAD: Detectar parámetros URL ===
+        function getURLParameters() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return {
+                dni: urlParams.get('dni'),
+                source: urlParams.get('source')
+            };
+        }
+
+        function initializeFromURL() {
+            const params = getURLParameters();
+            const dniSearchDiv = document.querySelector('.dni-search');
+            
+            if (params.dni && params.source === 'telegram') {
+                // Viene del bot de Telegram - OCULTAR INPUT COMPLETAMENTE
+                console.log('🤖 Inicializado desde bot de Telegram con DNI:', params.dni);
+                
+                // Ocultar completamente el div de búsqueda de DNI
+                dniSearchDiv.style.display = 'none';
+                
+                // Establecer el DNI internamente
+                currentDNI = params.dni;
+                
+                // Buscar la imagen automáticamente
+                buscarImagen();
+                
+                // Mostrar mensaje informativo con el DNI
+                mostrarStatus(`🤖 Usuario desde Telegram - DNI: ${params.dni}`, 'info');
+                
+                // Cambiar el título del panel para indicar que viene de Telegram
+                const panelTitle = document.querySelector('.panel h2');
+                if (panelTitle && panelTitle.textContent.includes('📁 Búsqueda de Imagen')) {
+                    panelTitle.textContent = `🤖 Usuario Telegram - DNI: ${params.dni}`;
+                }
+                
+            } else if (params.dni) {
+                // Viene de otra fuente pero con DNI - MOSTRAR INPUT PERO PRELLENADO
+                console.log('🔗 DNI proporcionado por URL:', params.dni);
+                dniInput.value = params.dni;
+                buscarImagen();
+                mostrarStatus(`🔗 DNI cargado desde URL: ${params.dni}`, 'info');
+                
+            } else {
+                // Uso normal - MOSTRAR INPUT VACÍO
+                console.log('📝 Modo normal - ingreso manual de DNI');
+                dniSearchDiv.style.display = 'flex'; // Asegurar que esté visible
+            }
+        }
+
+        // Referencias a elementos
+        const status = document.getElementById('status');
+        const dniInput = document.getElementById('dniInput');
+        const originalImage = document.getElementById('originalImage');
+        const resultCanvas = document.getElementById('resultCanvas');
+        const ctx = resultCanvas.getContext('2d');
+        const processBtn = document.getElementById('processBtn');
+        const saveBtn = document.getElementById('saveBtn');
+        const pythonCode = document.getElementById('pythonCode');
+
+        let currentDNI = '';
+
+        // === INICIALIZAR AL CARGAR LA PÁGINA ===
+        window.addEventListener('DOMContentLoaded', function() {
+            initializeFromURL();
+        });
+
+        // Referencias a controles de threshold alfa
+        const alphaThreshold = document.getElementById('alphaThreshold');
+        const alphaMaxValue = document.getElementById('alphaMaxValue');
+        const alphaThresholdValue = document.getElementById('alphaThresholdValue');
+        const alphaMaxValueValue = document.getElementById('alphaMaxValueValue');
+
+        // Referencias a controles RGB sincronizados
+        const lowerRGB = document.getElementById('lowerRGB');
+        const lowerRGBValue = document.getElementById('lowerRGBValue');
+        const independentLower = document.getElementById('independentLower');
+        
+        // Referencias a controles RGB independientes
+        const lowerR = document.getElementById('lowerR');
+        const lowerG = document.getElementById('lowerG');
+        const lowerB = document.getElementById('lowerB');
+        const lowerRValueIndep = document.getElementById('lowerRValueIndep');
+        const lowerGValueIndep = document.getElementById('lowerGValueIndep');
+        const lowerBValueIndep = document.getElementById('lowerBValueIndep');
+        
+        const upperR = document.getElementById('upperR');
+        const upperG = document.getElementById('upperG');
+        const upperB = document.getElementById('upperB');
+
+        // Displays de valores
+        const lowerRValue = document.getElementById('lowerRValue');
+        const lowerGValue = document.getElementById('lowerGValue');
+        const lowerBValue = document.getElementById('lowerBValue');
+        const upperRValue = document.getElementById('upperRValue');
+        const upperGValue = document.getElementById('upperGValue');
+        const upperBValue = document.getElementById('upperBValue');
+
+        const lowerPreview = document.getElementById('lowerPreview');
+        const upperPreview = document.getElementById('upperPreview');
+
+        // Referencias para corte manual
+        const autoCrop = document.getElementById('autoCrop');
+        const manualCrop = document.getElementById('manualCrop');
+        const selectionOverlay = document.getElementById('selectionOverlay');
+        const cropControls = document.getElementById('cropControls');
+        const cropInstructions = document.getElementById('cropInstructions');
+
+        // Referencias para color final
+        const customColor = document.getElementById('customColor');
+        const customColorValue = document.getElementById('customColorValue');
+
+        let currentViewMode = 'normal';
+        let currentColorMode = 'original';
+        let originalImageData = null;
+        let processedImageData = null;
+        let isIndependentMode = false;
+        let isManualCropMode = false;
+        let isSelecting = false;
+        let selectionStart = { x: 0, y: 0 };
+        let selectionEnd = { x: 0, y: 0 };
+        let manualCropArea = null;
+
+        function mostrarStatus(mensaje, tipo) {
+            status.textContent = mensaje;
+            status.className = `status ${tipo}`;
+            status.style.display = 'block';
+        }
+
+        function toggleIndependentLower() {
+            isIndependentMode = independentLower.checked;
+            const syncedControls = document.getElementById('syncedControls');
+            const independentControls = document.getElementById('independentControls');
+            
+            if (isIndependentMode) {
+                syncedControls.style.display = 'none';
+                independentControls.style.display = 'block';
+                
+                // Sincronizar valores actuales
+                const currentValue = lowerRGB.value;
+                lowerR.value = currentValue;
+                lowerG.value = currentValue;
+                lowerB.value = currentValue;
+            } else {
+                syncedControls.style.display = 'block';
+                independentControls.style.display = 'none';
+                
+                // Usar el promedio de los valores independientes
+                const avgValue = Math.round((parseInt(lowerR.value) + parseInt(lowerG.value) + parseInt(lowerB.value)) / 3);
+                lowerRGB.value = avgValue;
+            }
+            
+            updateValues();
+        }
+
+        function toggleCropMode() {
+            if (autoCrop.checked && manualCrop.checked) {
+                // Si ambos están marcados, desmarcar el otro
+                if (event.target === autoCrop) {
+                    manualCrop.checked = false;
+                } else {
+                    autoCrop.checked = false;
+                }
+            }
+            
+            isManualCropMode = manualCrop.checked;
+            
+            if (isManualCropMode) {
+                enableManualCrop();
+            } else {
+                disableManualCrop();
+            }
+            
+            // Reprocesar imagen
+            if (originalImageData) {
+                procesarImagen();
+            }
+        }
+
+        function enableManualCrop() {
+            cropInstructions.style.display = 'block';
+            resultCanvas.style.cursor = 'crosshair';
+            
+            // Event listeners para mouse (desktop)
+            resultCanvas.addEventListener('mousedown', startSelection);
+            resultCanvas.addEventListener('mousemove', updateSelection);
+            resultCanvas.addEventListener('mouseup', endSelection);
+            
+            // Event listeners para touch (móviles)
+            resultCanvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+            resultCanvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+            resultCanvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+            
+            // Actualizar instrucciones según dispositivo
+            updateInstructionsForDevice();
+            
+            mostrarStatus('📱 Modo corte manual activado. Toca y arrastra para seleccionar área', 'info');
+        }
+
+        function disableManualCrop() {
+            cropInstructions.style.display = 'none';
+            cropControls.style.display = 'none';
+            selectionOverlay.style.display = 'none';
+            resultCanvas.style.cursor = 'default';
+            manualCropArea = null;
+            
+            // Remover event listeners de mouse
+            resultCanvas.removeEventListener('mousedown', startSelection);
+            resultCanvas.removeEventListener('mousemove', updateSelection);
+            resultCanvas.removeEventListener('mouseup', endSelection);
+            
+            // Remover event listeners de touch
+            resultCanvas.removeEventListener('touchstart', handleTouchStart);
+            resultCanvas.removeEventListener('touchmove', handleTouchMove);
+            resultCanvas.removeEventListener('touchend', handleTouchEnd);
+        }
+
+        // === FUNCIONES PARA EVENTOS TÁCTILES ===
+        function handleTouchStart(e) {
+            e.preventDefault(); // Evitar scroll y zoom
+            if (!isManualCropMode) return;
+            
+            const touch = e.touches[0];
+            const mouseEvent = new MouseEvent('mousedown', {
+                clientX: touch.clientX,
+                clientY: touch.clientY
+            });
+            startSelection(mouseEvent);
+        }
+
+        function handleTouchMove(e) {
+            e.preventDefault(); // Evitar scroll
+            if (!isSelecting || !isManualCropMode) return;
+            
+            const touch = e.touches[0];
+            const mouseEvent = new MouseEvent('mousemove', {
+                clientX: touch.clientX,
+                clientY: touch.clientY
+            });
+            updateSelection(mouseEvent);
+        }
+
+        function handleTouchEnd(e) {
+            e.preventDefault();
+            if (!isManualCropMode) return;
+            
+            const mouseEvent = new MouseEvent('mouseup', {
+                clientX: 0,
+                clientY: 0
+            });
+            endSelection(mouseEvent);
+        }
+
+        function startSelection(e) {
+            if (!isManualCropMode) return;
+            
+            isSelecting = true;
+            const rect = resultCanvas.getBoundingClientRect();
+            const scaleX = resultCanvas.width / rect.width;
+            const scaleY = resultCanvas.height / rect.height;
+            
+            selectionStart.x = (e.clientX - rect.left) * scaleX;
+            selectionStart.y = (e.clientY - rect.top) * scaleY;
+            
+            selectionOverlay.style.display = 'block';
+            
+            // Feedback visual para móviles
+            resultCanvas.style.opacity = '0.8';
+        }
+
+        function updateSelection(e) {
+            if (!isSelecting || !isManualCropMode) return;
+            
+            const rect = resultCanvas.getBoundingClientRect();
+            const scaleX = resultCanvas.width / rect.width;
+            const scaleY = resultCanvas.height / rect.height;
+            
+            selectionEnd.x = (e.clientX - rect.left) * scaleX;
+            selectionEnd.y = (e.clientY - rect.top) * scaleY;
+            
+            updateSelectionOverlay();
+        }
+
+        function endSelection(e) {
+            if (!isManualCropMode) return;
+            
+            isSelecting = false;
+            resultCanvas.style.opacity = '1'; // Restaurar opacidad
+            
+            const width = Math.abs(selectionEnd.x - selectionStart.x);
+            const height = Math.abs(selectionEnd.y - selectionStart.y);
+            
+            // Área mínima más pequeña para móviles
+            const minArea = window.innerWidth <= 768 ? 5 : 10;
+            
+            if (width > minArea && height > minArea) {
+                manualCropArea = {
+                    x: Math.min(selectionStart.x, selectionEnd.x),
+                    y: Math.min(selectionStart.y, selectionEnd.y),
+                    width: width,
+                    height: height
+                };
+                
+                cropControls.style.display = 'flex';
+                mostrarStatus(`📐 Área seleccionada: ${Math.round(width)}x${Math.round(height)}px`, 'success');
+                
+                // Vibración en móviles (si está disponible)
+                if (navigator.vibrate) {
+                    navigator.vibrate(50);
+                }
+            } else {
+                selectionOverlay.style.display = 'none';
+                cropControls.style.display = 'none';
+                manualCropArea = null;
+                mostrarStatus('⚠️ Selección muy pequeña. Intenta de nuevo', 'error');
+                
+                // Vibración de error en móviles
+                if (navigator.vibrate) {
+                    navigator.vibrate([100, 50, 100]);
+                }
+            }
+        }
+
+        function updateSelectionOverlay() {
+            const rect = resultCanvas.getBoundingClientRect();
+            const canvasRect = resultCanvas.getBoundingClientRect();
+            
+            const x = Math.min(selectionStart.x, selectionEnd.x) * (rect.width / resultCanvas.width);
+            const y = Math.min(selectionStart.y, selectionEnd.y) * (rect.height / resultCanvas.height);
+            const width = Math.abs(selectionEnd.x - selectionStart.x) * (rect.width / resultCanvas.width);
+            const height = Math.abs(selectionEnd.y - selectionStart.y) * (rect.height / resultCanvas.height);
+            
+            selectionOverlay.style.left = x + 'px';
+            selectionOverlay.style.top = y + 'px';
+            selectionOverlay.style.width = width + 'px';
+            selectionOverlay.style.height = height + 'px';
+        }
+
+        function aplicarCorteManual() {
+            if (!manualCropArea || !processedImageData) return;
+            
+            // Crear canvas temporal para el corte
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            tempCanvas.width = manualCropArea.width;
+            tempCanvas.height = manualCropArea.height;
+            
+            // Obtener datos de la imagen procesada
+            const imageData = ctx.getImageData(
+                manualCropArea.x, 
+                manualCropArea.y, 
+                manualCropArea.width, 
+                manualCropArea.height
+            );
+            
+            // Redimensionar canvas principal
+            resultCanvas.width = manualCropArea.width;
+            resultCanvas.height = manualCropArea.height;
+            
+            // Dibujar imagen recortada
+            ctx.putImageData(imageData, 0, 0);
+            processedImageData = imageData;
+            
+            // Limpiar selección
+            cancelarCorteManual();
+            
+            mostrarStatus(`✂️ Corte manual aplicado: ${Math.round(manualCropArea.width)}x${Math.round(manualCropArea.height)}px`, 'success');
+            
+            // Aplicar modo de vista actual
+            aplicarModoVista();
+        }
+
+        function cancelarCorteManual() {
+            selectionOverlay.style.display = 'none';
+            cropControls.style.display = 'none';
+            manualCropArea = null;
+            isSelecting = false;
+        }
+
+        function buscarImagen() {
+            const params = getURLParameters();
+            let dni;
+            
+            if (params.dni && params.source === 'telegram') {
+                // Usar el DNI de la URL cuando viene de Telegram
+                dni = params.dni;
+            } else {
+                // Usar el DNI del input en modo normal
+                dni = dniInput.value.trim();
+            }
+            
+            if (!dni) {
+                mostrarStatus('❌ Por favor ingresa un DNI', 'error');
+                return;
+            }
+
+            if (!/^\d{8}$/.test(dni)) {
+                mostrarStatus('❌ El DNI debe tener exactamente 8 dígitos', 'error');
+                return;
+            }
+
+            currentDNI = dni;
+            const imagePath = `${dni}_huella.jpg`;
+            
+            mostrarStatus('Buscando imagen...', 'info');
+
+            // Intentar cargar la imagen
+            const img = new Image();
+            img.onload = function() {
+                // Mostrar imagen original
+                originalImage.src = this.src;
+                originalImage.style.display = 'block';
+                document.getElementById('noImageText').style.display = 'none';
+
+                // Guardar datos de la imagen original
+                originalImageData = this;
+
+                // Actualizar información
+                document.getElementById('imageInfo').innerHTML = `
+                    <strong>Archivo:</strong> ${imagePath}<br>
+                    <strong>Dimensiones:</strong> ${this.naturalWidth} x ${this.naturalHeight}px<br>
+                    <strong>DNI:</strong> ${dni}
+                `;
+
+                // Mostrar estado
+                mostrarStatus(`✅ Imagen cargada correctamente: ${imagePath}`, 'success');
+
+                // Mostrar y procesar inmediatamente
+                resultCanvas.style.display = 'block';
+                document.getElementById('noResultText').style.display = 'none';
+
+                // Procesar la imagen automáticamente y mostrar resultado
+                procesarImagen();
+
+                // Mostrar botón de guardar directamente si hay resultado
+                saveBtn.style.display = 'block';
+            };
+            
+            img.onerror = function() {
+                mostrarStatus(`No se encontró la imagen: ${imagePath}`, 'error');
+                originalImage.style.display = 'none';
+                document.getElementById('noImageText').style.display = 'block';
+                processBtn.disabled = true;
+                resultCanvas.style.display = 'none';
+                document.getElementById('noResultText').style.display = 'block';
+                saveBtn.style.display = 'none';
+            };
+            
+            // Usar la ruta correcta del servidor local
+            img.src = `/uploads/get_img/${dni}/${dni}_huella.jpg`;
+        }
+
+        function procesarImagen() {
+            if (!originalImageData) return;
+
+            // Configurar canvas
+            resultCanvas.width = originalImageData.naturalWidth;
+            resultCanvas.height = originalImageData.naturalHeight;
+            
+            // Dibujar imagen original
+            ctx.drawImage(originalImageData, 0, 0);
+            
+            // Obtener datos de imagen
+            const imageData = ctx.getImageData(0, 0, resultCanvas.width, resultCanvas.height);
+            const data = imageData.data;
+            
+            // Obtener valores RGB Lower según el modo
+            let lowerRGBArray;
+            if (isIndependentMode) {
+                lowerRGBArray = [parseInt(lowerR.value), parseInt(lowerG.value), parseInt(lowerB.value)];
+            } else {
+                const lowerRGBValue = parseInt(lowerRGB.value);
+                lowerRGBArray = [lowerRGBValue, lowerRGBValue, lowerRGBValue];
+            }
+            
+            // Aplicar procesamiento simulado
+            const upperRGBArray = [parseInt(upperR.value), parseInt(upperG.value), parseInt(upperB.value)];
+            const thresholdValue = parseInt(alphaThreshold.value);
+            const maxValue = parseInt(alphaMaxValue.value);
+            
+            for (let i = 0; i < data.length; i += 4) {
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+                let alpha = data[i + 3];
+                
+                // Aplicar threshold al canal alfa (simular cv2.threshold)
+                alpha = alpha >= thresholdValue ? maxValue : 0;
+                
+                // Verificar si el pixel está en el rango a eliminar
+                const inRange = (r >= lowerRGBArray[0] && r <= upperRGBArray[0]) &&
+                               (g >= lowerRGBArray[1] && g <= upperRGBArray[1]) &&
+                               (b >= lowerRGBArray[2] && b <= upperRGBArray[2]);
+                
+                if (inRange) {
+                    // Hacer transparente
+                    alpha = 0;
+                }
+                
+                data[i + 3] = alpha;
+            }
+            
+            // Crear imagen procesada temporal
+            const tempImageData = new ImageData(new Uint8ClampedArray(data), imageData.width, imageData.height);
+            
+            // === RECORTE AUTOMÁTICO ===
+            if (autoCrop.checked && !isManualCropMode) {
+                const cropResult = recortarImagenAutomatico(tempImageData);
+                if (cropResult) {
+                    // Redimensionar canvas al tamaño recortado
+                    resultCanvas.width = cropResult.width;
+                    resultCanvas.height = cropResult.height;
+                    
+                    // Dibujar imagen recortada
+                    ctx.putImageData(cropResult.imageData, 0, 0);
+                    processedImageData = cropResult.imageData;
+                    
+                    mostrarStatus(`✂️ Imagen recortada automáticamente: ${cropResult.width}x${cropResult.height}px`, 'success');
+                } else {
+                    // No hay contenido visible
+                    ctx.putImageData(tempImageData, 0, 0);
+                    processedImageData = tempImageData;
+                    mostrarStatus('⚠️ No se detectó contenido visible para recortar', 'info');
+                }
+            } else {
+                // Sin recorte automático o en modo manual
+                ctx.putImageData(tempImageData, 0, 0);
+                processedImageData = tempImageData;
+                
+                if (isManualCropMode) {
+                    mostrarStatus('✅ Imagen procesada. Selecciona área para corte manual', 'success');
+                } else {
+                    mostrarStatus('✅ Imagen procesada sin recorte', 'success');
+                }
+            }
+            
+            // Aplicar modo de vista
+            aplicarModoVista();
+            
+            // Mostrar resultado
+            resultCanvas.style.display = 'block';
+            document.getElementById('noResultText').style.display = 'none';
+            saveBtn.style.display = 'block';
+            
+            // Actualizar código Python
+            actualizarCodigoPython();
+        }
+
+        function recortarImagenAutomatico(imageData) {
+            const data = imageData.data;
+            const width = imageData.width;
+            const height = imageData.height;
+            
+            let minX = width, minY = height, maxX = 0, maxY = 0;
+            let hasVisibleContent = false;
+            
+            // Encontrar los límites del contenido visible (alpha > 0)
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const index = (y * width + x) * 4;
+                    const alpha = data[index + 3];
+                    
+                    if (alpha > 0) {
+                        hasVisibleContent = true;
+                        minX = Math.min(minX, x);
+                        minY = Math.min(minY, y);
+                        maxX = Math.max(maxX, x);
+                        maxY = Math.max(maxY, y);
+                    }
+                }
+            }
+            
+            if (!hasVisibleContent) {
+                return null; // No hay contenido visible
+            }
+            
+            // Calcular dimensiones del recorte
+            const cropWidth = maxX - minX + 1;
+            const cropHeight = maxY - minY + 1;
+            
+            // Crear nueva imagen recortada
+            const croppedData = new Uint8ClampedArray(cropWidth * cropHeight * 4);
+            
+            for (let y = 0; y < cropHeight; y++) {
+                for (let x = 0; x < cropWidth; x++) {
+                    const sourceIndex = ((minY + y) * width + (minX + x)) * 4;
+                    const targetIndex = (y * cropWidth + x) * 4;
+                    
+                    croppedData[targetIndex] = data[sourceIndex];         // R
+                    croppedData[targetIndex + 1] = data[sourceIndex + 1]; // G
+                    croppedData[targetIndex + 2] = data[sourceIndex + 2]; // B
+                    croppedData[targetIndex + 3] = data[sourceIndex + 3]; // A
+                }
+            }
+            
+            return {
+                imageData: new ImageData(croppedData, cropWidth, cropHeight),
+                width: cropWidth,
+                height: cropHeight,
+                bounds: { minX, minY, maxX, maxY }
+            };
+        }
+
+        function cambiarModoVista() {
+            const selectedMode = document.querySelector('input[name="viewMode"]:checked').value;
+            currentViewMode = selectedMode;
+            
+            if (processedImageData) {
+                aplicarModoVista();
+            }
+        }
+
+        function cambiarColorFinal() {
+            const selectedMode = document.querySelector('input[name="colorMode"]:checked').value;
+            currentColorMode = selectedMode;
+            
+            if (selectedMode === 'custom') {
+                customColorValue.textContent = customColor.value;
+            }
+            
+            // Reprocesar imagen si existe
+            if (originalImageData) {
+                procesarImagen();
+            }
+            
+            // Actualizar código Python
+            actualizarCodigoPython();
+        }
+
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : null;
+        }
+
+        function getColorForMode(mode) {
+            switch(mode) {
+                case 'original': return { r: 0, g: 0, b: 0 };
+                case 'blue': return { r: 0, g: 100, b: 255 };
+                case 'red': return { r: 255, g: 0, b: 0 };
+                case 'green': return { r: 0, g: 255, b: 0 };
+                case 'custom': return hexToRgb(customColor.value);
+                default: return { r: 0, g: 0, b: 0 };
+            }
+        }
+
+        function aplicarModoVista() {
+            if (!processedImageData) return;
+            
+            const data = new Uint8ClampedArray(processedImageData.data);
+            
+            // Aplicar color final primero
+            const color = getColorForMode(currentColorMode);
+            const targetColor = [color.r, color.g, color.b]; // Usar helper function
+            
+            // Aplicar color si no es original
+            if (currentColorMode !== 'original') {
+                for (let i = 0; i < data.length; i += 4) {
+                    if (data[i + 3] > 0) { // Solo si no es transparente
+                        data[i] = targetColor[0];     // R
+                        data[i + 1] = targetColor[1]; // G
+                        data[i + 2] = targetColor[2]; // B
+                    }
+                }
+            }
+            
+            // Luego aplicar efecto negativo si está activo
+            if (currentViewMode === 'negative') {
+                for (let i = 0; i < data.length; i += 4) {
+                    if (data[i + 3] > 0) { // Solo si no es transparente
+                        data[i] = 255 - data[i];     // R
+                        data[i + 1] = 255 - data[i + 1]; // G
+                        data[i + 2] = 255 - data[i + 2]; // B
+                    }
+                }
+            }
+            
+            const finalImageData = new ImageData(data, processedImageData.width, processedImageData.height);
+            ctx.putImageData(finalImageData, 0, 0);
+        }
+
+        document.querySelectorAll(".accordion-header").forEach(header => {
+            header.addEventListener("click", () => {
+                const item = header.parentElement;
+                item.classList.toggle("active");
+            });
+        });
+
+        // --- Actualización de valores en tiempo real ---
+        document.querySelectorAll(".slider").forEach(slider => {
+            slider.addEventListener("input", e => {
+                const span = document.getElementById(slider.id + "Value");
+                if (span) span.textContent = e.target.value;
+            });
+        });
+
+        function actualizarCodigoPython() {
+            // Funcionalidad deshabilitada - no hay elemento pythonCode en el DOM
+            console.log('Código Python generado para DNI:', currentDNI);
+            return;
+        }
+
+        function guardarResultado() {
+            if (!currentDNI || !resultCanvas) {
+                mostrarStatus('❌ No hay imagen para guardar', 'error');
+                return;
+            }
+            
+            // Mostrar estado de guardando
+            mostrarStatus('💾 Guardando imagen...', 'info');
+            saveBtn.disabled = true;
+            saveBtn.textContent = '⏳ Guardando...';
+            
+            // Obtener datos de la imagen
+            const imageData = resultCanvas.toDataURL('image/png');
+            
+            // Enviar al servidor local
+            fetch('/guardar_imagen', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    dni: currentDNI,
+                    image_data: imageData,
+                    tipo: 'huella'  // Especificar que es una huella
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    mostrarStatus(`✅ ${data.message} - Redirigiendo...`, 'success');
+                    
+                    // Comentar esta línea para evitar el error
+                    // actualizarCodigoPython();
+                    
+                    // Redirigir automáticamente después de 1.5 segundos
+                    setTimeout(() => {
+                        window.location.href = '/autorizaciones';
+                    }, 1500);
+                } else {
+                    mostrarStatus(`❌ Error: ${data.message}`, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                mostrarStatus('❌ Error de conexión. ¿Está ejecutándose el servidor?', 'error');
+                // Restaurar el botón en caso de error
+                saveBtn.disabled = false;
+                saveBtn.textContent = '💾 Huella Guardada';
+            });
+        }
+
+        function copiarCodigo() {
+            pythonCode.select();
+            document.execCommand('copy');
+            mostrarStatus('Código copiado al portapapeles', 'success');
+        }
+
+        function resetearValores() {
+            // Resetear threshold alfa
+            alphaThreshold.value = 200;
+            alphaMaxValue.value = 255;
+            
+            // Resetear RGB lower sincronizado
+            lowerRGB.value = 140;
+            
+            // Resetear RGB lower independientes
+            lowerR.value = 140;
+            lowerG.value = 140;
+            lowerB.value = 140;
+            
+            // Resetear RGB upper
+            upperR.value = 255;
+            upperG.value = 255;
+            upperB.value = 255;
+            
+            // Resetear modo independiente
+            independentLower.checked = false;
+            isIndependentMode = false;
+            document.getElementById('syncedControls').style.display = 'block';
+            document.getElementById('independentControls').style.display = 'none';
+            
+            // Resetear modos de corte
+            autoCrop.checked = true;
+            manualCrop.checked = false;
+            disableManualCrop();
+            
+            // Resetear modo de vista
+            document.querySelector('input[name="viewMode"][value="normal"]').checked = true;
+            currentViewMode = 'normal';
+            
+            // Resetaer color final
+            
+
+            updateValues();
+            mostrarStatus('Valores reseteados a los predeterminados', 'success');
+        }
+
+        function updateValues() {
+            // Actualizar displays de threshold alfa
+            alphaThresholdValue.textContent = alphaThreshold.value;
+            alphaMaxValueValue.textContent = alphaMaxValue.value;
+            
+            // Actualizar RGB lower según el modo
+            let lowerRVal, lowerGVal, lowerBVal;
+            
+            if (isIndependentMode) {
+                lowerRVal = lowerR.value;
+                lowerGVal = lowerG.value;
+                lowerBVal = lowerB.value;
+                
+                lowerRValueIndep.textContent = lowerRVal;
+                lowerGValueIndep.textContent = lowerGVal;
+                lowerBValueIndep.textContent = lowerBVal;
+            } else {
+                const lowerValue = lowerRGB.value;
+                lowerRVal = lowerGVal = lowerBVal = lowerValue;
+                lowerRGBValue.textContent = lowerValue;
+            }
+            
+            // Actualizar displays de resumen
+            lowerRValue.textContent = lowerRVal;
+            lowerGValue.textContent = lowerGVal;
+            lowerBValue.textContent = lowerBVal;
+            
+            // Actualizar displays RGB upper
+            upperRValue.textContent = upperR.value;
+            upperGValue.textContent = upperG.value;
+            upperBValue.textContent = upperB.value;
+
+            lowerPreview.style.backgroundColor = `rgb(${lowerRVal}, ${lowerGVal}, ${lowerBVal})`;
+            upperPreview.style.backgroundColor = `rgb(${upperR.value}, ${upperG.value}, ${upperB.value})`;
+
+            // Procesar en tiempo real si hay imagen cargada
+            if (originalImageData) {
+                procesarImagen();
+            }
+        }
+
+        // Event listeners
+        alphaThreshold.addEventListener('input', updateValues);
+        alphaMaxValue.addEventListener('input', updateValues);
+        lowerRGB.addEventListener('input', updateValues);
+        lowerR.addEventListener('input', updateValues);
+        lowerG.addEventListener('input', updateValues);
+        lowerB.addEventListener('input', updateValues);
+        upperR.addEventListener('input', updateValues);
+        upperG.addEventListener('input', updateValues);
+        upperB.addEventListener('input', updateValues);
+
+        // === DETECCIÓN DE DISPOSITIVO MÓVIL ===
+        function isMobileDevice() {
+            return window.innerWidth <= 768 || 
+                   /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        }
+
+        function updateInstructionsForDevice() {
+            const mobileInstructions = document.querySelector('.mobile-instructions');
+            const desktopInstructions = document.querySelector('.desktop-instructions');
+            
+            if (isMobileDevice()) {
+                mobileInstructions.style.display = 'block';
+                desktopInstructions.style.display = 'none';
+            } else {
+                mobileInstructions.style.display = 'none';
+                desktopInstructions.style.display = 'block';
+            }
+        }
+
+        // Actualizar instrucciones al cambiar orientación
+        window.addEventListener('orientationchange', function() {
+            setTimeout(updateInstructionsForDevice, 100);
+        });
+
+        window.addEventListener('resize', updateInstructionsForDevice);
+
+        // Permitir buscar con Enter
+        dniInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                buscarImagen();
+            }
+        });
+        // Inicializar
+        updateValues();
+    </script>
+</body>
+</html>

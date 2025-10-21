@@ -2,6 +2,7 @@ const adminMenu = require('../menus/adminMenu');
 const userApiService = require('../services/userApiService');
 const { startSessionTimeout, clearUserSession, sendMessageWithTracking } = require('../utils/session');
 const { trackBotMessage } = require('../utils/messages');
+const { saveUserInfo } = require('../utils/chatManager');
 
 module.exports = function startHandler(bot) {
   bot.onText(/\/start/, async (msg) => {
@@ -17,6 +18,24 @@ module.exports = function startHandler(bot) {
       
       if (user) {
         console.log(`✅ Usuario encontrado: ${user.nombre} (ID: ${user.id}, Role: ${user.role_id})`);
+        
+        // Guardar información del usuario en user_chats.json
+        const userInfoSaved = saveUserInfo(chatId, {
+          id: user.id,
+          nombre: user.nombre,
+          dni: user.dni,
+          role_id: user.role_id,
+          telegram_id: chatId,
+          telegram_username: msg.from.username || null,
+          telegram_first_name: msg.from.first_name || null,
+          telegram_last_name: msg.from.last_name || null
+        });
+        
+        if (userInfoSaved) {
+          console.log(`📝 Información del usuario guardada en user_chats.json`);
+        } else {
+          console.warn(`⚠️ No se pudo guardar la información del usuario en user_chats.json`);
+        }
         
         // Crear el teclado persistente para todos los usuarios
         let keyboard = [
@@ -127,13 +146,14 @@ module.exports = function startHandler(bot) {
     
     try {
       // Registrar usuario directamente con valores por defecto
-      await userApiService.addUser(
+      const registrationResult = await userApiService.addUser(
         chatId,           // telegram_id (tomado del chat)
         dni,              // dni (ingresado por el usuario)
         nombre,           // nombre (tomado de Telegram)
-                         // role_id (por defecto 1)
-        // sede omitido (será null/undefined y no se enviará)
+        2                 // role_id (por defecto 2 para usuarios normales)
       );
+      
+      console.log('📝 Resultado del registro:', registrationResult);
       
       // Eliminar mensaje de procesamiento
       await bot.deleteMessage(chatId, processingMessage.message_id);
@@ -144,7 +164,8 @@ module.exports = function startHandler(bot) {
         `👤 Nombre: ${nombre}\n` +
         `🪪 DNI: ${dni}\n` +
         `🏢 Sede: Sin sede asignada\n` +
-        `👥 Rol: Usuario (ID: 1)`
+        `👥 Rol: Usuario (ID: 1)\n` +
+        `💬 Chat ID: ${chatId}`
       );
       trackBotMessage(chatId, confirmMessage.message_id);
       
@@ -152,6 +173,40 @@ module.exports = function startHandler(bot) {
       const user = await userApiService.getUser(chatId);
       
       if (user) {
+        console.log('📋 Usuario obtenido después del registro:', user);
+        
+        // Intentar actualizar el chat_id en el backend
+        try {
+          await userApiService.updateUserChatId(user.id, chatId);
+          console.log('✅ Chat_id actualizado en el backend exitosamente');
+        } catch (updateError) {
+          console.warn('⚠️ No se pudo actualizar chat_id en backend, pero continuando con el proceso local:', updateError.message);
+        }
+        
+        // Guardar información del usuario en user_chats.json
+        const userInfoToSave = {
+          id: user.id,
+          nombre: user.nombre,
+          dni: user.dni,
+          role_id: user.role_id,
+          telegram_id: chatId.toString(),
+          chat_id: chatId.toString(), // Guardar el chat_id localmente
+          telegram_username: msg.from.username || null,
+          telegram_first_name: msg.from.first_name || null,
+          telegram_last_name: msg.from.last_name || null,
+          lastLogin: new Date().toISOString()
+        };
+        
+        console.log('💾 Guardando información del usuario:', userInfoToSave);
+        
+        const userInfoSaved = saveUserInfo(chatId, userInfoToSave);
+        
+        if (userInfoSaved) {
+          console.log(`📝 Información del usuario recién registrado guardada en user_chats.json`);
+        } else {
+          console.warn(`⚠️ No se pudo guardar la información del usuario recién registrado en user_chats.json`);
+        }
+        
         // Crear el mismo teclado persistente que se usa al iniciar sesión
         let keyboard = [
           ['👤 Perfil', '📝 Consultas'],

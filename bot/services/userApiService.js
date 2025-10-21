@@ -255,11 +255,11 @@ class UserApiService {
         return data.data;
       } else {
         console.warn('Estructura de roles no reconocida:', data);
-        return [{ id: 1, name: 'Usuario' }]; // Fallback con rol por defecto
+        return [{ id: 2, name: 'Usuario' }]; // Fallback con rol por defecto
       }
     } catch (error) {
       console.error('Error al obtener roles:', error);
-      return [{ id: 1, name: 'Usuario' }]; // Fallback con rol por defecto
+      return [{ id: 2, name: 'Usuario' }]; // Fallback con rol por defecto
     }
   }
 
@@ -330,17 +330,23 @@ class UserApiService {
   async addUser(chatId, dni, nombre, roleId = 2, sede = null) {
     const userData = {
       telegram_id: chatId.toString(),
+      chat_id: chatId.toString(), // Agregar chat_id explícitamente
       dni: dni,
       nombre: nombre,
       role_id: roleId,
       sede: sede || "Sin sede"
     };
     
+    console.log('📤 Enviando datos de usuario al backend:', userData);
+    
     try {
       // Llamada directa sin logs excesivos
       const response = await this.api.post('/users/', userData);
+      console.log('📥 Respuesta del backend:', response.data);
       return response.data;
     } catch (error) {
+      console.error('❌ Error al registrar usuario:', error.response?.data || error.message);
+      
       // Solo loggear errores reales, no warnings
       if (error.response?.status >= 500) {
         console.error('Error del servidor:', error.response?.status);
@@ -379,7 +385,7 @@ class UserApiService {
       
       // Asegurar que siempre sean arrays con valores específicos
       const sedesArray = Array.isArray(sedes) ? sedes : ['Atalaya', 'Puerto Bermúdez', 'Coronel Portillo', 'Sin sede'];
-      const rolesArray = Array.isArray(roles) ? roles : [{ id: 1, name: 'Usuario' }];
+      const rolesArray = Array.isArray(roles) ? roles : [{ id: 2, name: 'Usuario' }];
       
       return {
         chatId,
@@ -396,7 +402,7 @@ class UserApiService {
         dni,
         nombre,
         sedes: ['Atalaya', 'Puerto Bermúdez', 'Coronel Portillo', 'Sin sede'],
-        roles: [{ id: 1, name: 'Usuario' }]
+        roles: [{ id: 2, name: 'Usuario' }]
       };
     }
   }
@@ -441,6 +447,163 @@ class UserApiService {
       throw new Error('Usuario no encontrado');
     }
     return await this.updateUser(user.id, { estado: estado });
+  }
+
+  /**
+   * Obtener chat_id del usuario desde el backend
+   * @param {string} userId - ID del usuario
+   * @returns {Promise<string|null>} Chat ID si está disponible
+   */
+  async getUserChatId(userId) {
+    try {
+      const user = await this.getUserById(userId);
+      
+      if (user) {
+        // Buscar chat_id en diferentes campos posibles
+        const chatId = user.chat_id || user.telegram_id;
+        
+        if (chatId) {
+          console.log(`📱 Chat_id encontrado en backend para usuario ${userId}: ${chatId}`);
+          return chatId.toString();
+        } else {
+          console.log(`❌ No se encontró chat_id en backend para usuario ${userId}`);
+          return null;
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      console.error(`❌ Error al obtener chat_id del backend para usuario ${userId}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Verificar si el usuario tiene chat_id válido para notificaciones
+   * @param {string} userId - ID del usuario
+   * @returns {Promise<Object>} Información del chat_id
+   */
+  async verifyChatIdForNotifications(userId) {
+    try {
+      // 1. Buscar en backend
+      const backendChatId = await this.getUserChatId(userId);
+      
+      // 2. Buscar en archivo local
+      const { findUserById } = require('../utils/chatManager');
+      const localUser = findUserById(userId);
+      const localChatId = localUser?.userInfo?.chat_id || localUser?.chatId;
+      
+      const result = {
+        userId: userId,
+        backendChatId: backendChatId,
+        localChatId: localChatId,
+        hasValidChatId: !!(backendChatId || localChatId),
+        recommendedChatId: backendChatId || localChatId,
+        source: backendChatId ? 'backend' : (localChatId ? 'local' : 'none')
+      };
+      
+      console.log(`🔍 Verificación de chat_id para usuario ${userId}:`, result);
+      
+      return result;
+    } catch (error) {
+      console.error(`❌ Error al verificar chat_id para usuario ${userId}:`, error.message);
+      return {
+        userId: userId,
+        hasValidChatId: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Actualizar chat_id del usuario en el backend
+   * @param {string} userId - ID del usuario
+   * @param {string} chatId - Chat ID de Telegram
+   * @returns {Promise<Object>} Usuario actualizado
+   */
+  async updateUserChatId(userId, chatId) {
+    try {
+      console.log(`📤 Actualizando chat_id en backend para usuario ${userId}: ${chatId}`);
+      
+      // Intentar actualizar con chat_id como string
+      const updateData = {
+        chat_id: chatId.toString(),
+        telegram_id: chatId.toString() // También actualizar telegram_id por si acaso
+      };
+      
+      const response = await this.updateUser(userId, updateData);
+      console.log('📥 Chat_id actualizado en backend:', response);
+      return response;
+    } catch (error) {
+      console.error('❌ Error al actualizar chat_id en backend:', error.response?.data || error.message);
+      
+      // Si el error es por rango de valores, intentar solo con telegram_id
+      if (error.response?.data?.detail?.includes('Out of range value for column')) {
+        console.log('🔄 Intentando actualizar solo telegram_id...');
+        try {
+          const fallbackData = { telegram_id: chatId.toString() };
+          const fallbackResponse = await this.updateUser(userId, fallbackData);
+          console.log('📥 Telegram_id actualizado en backend (fallback):', fallbackResponse);
+          return fallbackResponse;
+        } catch (fallbackError) {
+          console.error('❌ Error en fallback:', fallbackError.response?.data || fallbackError.message);
+          throw new Error('No se pudo actualizar el chat_id en el backend');
+        }
+      }
+      
+      throw new Error('No se pudo actualizar el chat_id en el backend');
+    }
+  }
+
+  /**
+   * Actualizar estado del usuario
+   * @param {string} chatId - Chat ID del usuario
+   * @param {string} estado - Nuevo estado
+   * @returns {Promise<Object>} Usuario actualizado
+   */
+  async updateUserEstado(chatId, estado) {
+    const user = await this.getUserByChatId(chatId);
+    if (!user) {
+      throw new Error('Usuario no encontrado');
+    }
+    return await this.updateUser(user.id, { estado: estado });
+  }
+
+  /**
+   * Obtener estado de autorización de un usuario
+   * @param {number} userId - ID del usuario
+   * @returns {Promise<Object>} Estado de autorización
+   */
+  async getAutorizacionEstado(userId) {
+    try {
+      const response = await this.api.get(`/autorizaciones/estado/${userId}`);
+      return response.data;
+    } catch (error) {
+      if (error.response?.status === 404) {
+        // Si no existe autorización, retornar estado por defecto
+        return { estado: 'pendiente', user_id: userId };
+      }
+      console.error('Error al obtener estado de autorización:', error.response?.data || error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Actualizar estado de autorización de un usuario
+   * @param {number} userId - ID del usuario
+   * @param {string} nuevoEstado - Nuevo estado ('pendiente' o 'activo')
+   * @returns {Promise<Object>} Respuesta de actualización
+   */
+  async updateAutorizacionEstado(userId, nuevoEstado) {
+    try {
+      const response = await this.api.put(`/autorizaciones/actualizar-estado/${userId}`, null, {
+        params: { nuevo_estado: nuevoEstado }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error al actualizar estado de autorización:', error.response?.data || error.message);
+      throw error;
+    }
   }
 }
 

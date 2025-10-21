@@ -2,9 +2,21 @@ function autorizacionesAdminMenu() {
   return {
     reply_markup: {
       inline_keyboard: [
-        [{ text: '➕ Generar Autorización', callback_data: 'admin_generar_autorizacion' }],
+        [{ text: '🛠️ Generador', callback_data: 'admin_generador_menu' }],
         [{ text: '📋 Listar Autorizaciones Activas', callback_data: 'admin_listar_autorizaciones' }],
-        [{ text: '🔙 Volver al Panel Admin', callback_data: 'admin_panel' }]
+        [{ text: '🔙 Volver al Panel Admin', callback_data: 'admin_menu' }]
+      ]
+    }
+  };
+}
+
+function generadorMenu() {
+  return {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: '🔑 Generar Autorización', callback_data: 'admin_generar_autorizacion' }],
+        [{ text: '📄 Generar Compa-Venta', callback_data: 'admin_generar_compaventa' }],
+        [{ text: '🔙 Volver', callback_data: 'admin_autorizaciones' }]
       ]
     }
   };
@@ -50,6 +62,7 @@ function paginacionAutorizaciones(page = 1, totalPages = 1) {
 
 module.exports = {
   autorizacionesAdminMenu,
+  generadorMenu,
   confirmarGenerarAutorizacion,
   paginacionAutorizaciones
 };

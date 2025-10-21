@@ -270,44 +270,7 @@ module.exports = function callbackHandler(bot) {
       trackBotMessage(chatId, sentMessage.message_id);
     }}
 
-    // Manejar acción de tienda - AHORA ESTÁ EN EL LUGAR CORRECTO
-    if (action === 'tienda') {
-      const tiendaMenu = {
-        reply_markup: {
-          inline_keyboard: [
-            [{ 
-              text: '🛒 Abrir Tienda', 
-              web_app: { url: `https://0f18915009e0.ngrok-free.app/shop/html` }
-            }],
-            [{ text: '🔙 Volver al Menú', callback_data: 'main_menu' }]
-          ]
-        }
-      };
-
-      try {
-        await bot.editMessageText(
-          '🛒 **Bienvenido a nuestra Tienda**\n\n' +
-          'Haz clic en el botón de abajo para abrir la tienda en una nueva ventana.\n\n' +
-          '✨ Podrás navegar por todos nuestros productos de forma interactiva.',
-          {
-            chat_id: chatId,
-            message_id: query.message.message_id,
-            parse_mode: 'Markdown',
-            ...tiendaMenu
-          }
-        );
-      } catch (error) {
-        await bot.sendMessage(chatId, 
-          '🛒 **Bienvenido a nuestra Tienda**\n\n' +
-          'Haz clic en el botón de abajo para abrir la tienda en una nueva ventana.\n\n' +
-          '✨ Podrás navegar por todos nuestros productos de forma interactiva.',
-          {
-            parse_mode: 'Markdown',
-            ...tiendaMenu
-          }
-        );
-      }
-    }
+    
 
     if (userSessions.has(chatId)) {
       renewSessionTimeout(bot, chatId);

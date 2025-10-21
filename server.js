@@ -2,25 +2,19 @@ const { bot } = require('./bot/bot');
 
 console.log('🚀 Aplicación iniciada...');
 console.log('🤖 Bot de Telegram: ✅');
-console.log('🌐 Servidor Web: ✅');
 
 // Manejar cierre graceful
 const gracefulShutdown = (signal) => {
   console.log(`\n🛑 Recibida señal ${signal}, cerrando aplicación...`);
   
-  // Cerrar servidor web
-  server.close(() => {
-    console.log('✅ Servidor web cerrado');
-    
-    // Cerrar bot
-    if (bot && bot.stopPolling) {
-      bot.stopPolling();
-      console.log('✅ Bot detenido');
-    }
-    
-    console.log('✅ Aplicación cerrada correctamente');
-    process.exit(0);
-  });
+  // Cerrar bot
+  if (bot && bot.stopPolling) {
+    bot.stopPolling();
+    console.log('✅ Bot detenido');
+  }
+  
+  console.log('✅ Aplicación cerrada correctamente');
+  process.exit(0);
   
   // Forzar cierre después de 10 segundos
   setTimeout(() => {

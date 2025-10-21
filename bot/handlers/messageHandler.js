@@ -1,8 +1,10 @@
 const userApiService = require('../services/userApiService');
-const { renewSessionTimeout, userSessions, trackBotMessage } = require('../utils/session');
+const { renewSessionTimeout, userSessions, trackBotMessage, clearUserSession } = require('../utils/session');
 const mainMenu = require('../menus/mainMenu');
 const adminMenu = require('../menus/adminMenu');
 const consultasMenu = require('../menus/consultasMenu');
+const { tiendaWebApp } = require('../menus/shopMenu');
+const reportsMenu = require('../menus/reportsMenu');
 
 module.exports = function messageHandler(bot) {
   // Handler para fotos (proceso de autorización)
@@ -15,10 +17,17 @@ module.exports = function messageHandler(bot) {
     try {
       const user = await userApiService.getUser(chatId);
       
-      // Si el usuario no existe, ignorar
+      // Si el usuario no existe, verificar si está intentando usar "🚀 Iniciar"
       if (!user) {
-        console.log(`[FOTO DEBUG] Usuario no encontrado para chatId: ${chatId}`);
-        return;
+        if (text === '🚀 Iniciar') {
+          await bot.sendMessage(chatId, 
+            '❌ **Acceso no autorizado**\n\n' +
+            'Tu cuenta no está registrada o ha sido eliminada.\n\n' +
+            'Para registrarte o volver a acceder, usa el comando: /start',
+            { parse_mode: 'Markdown' }
+          );
+        }
+        return; // Ignorar otros mensajes si el usuario no existe
       }
 
       // Verificar si hay una alerta de sesión activa
@@ -195,7 +204,7 @@ module.exports = function messageHandler(bot) {
       if (!user) return;
 
       // Verificar si hay una alerta de sesión activa
-      const session = userSessions.get(chatId) || {};
+      let session = userSessions.get(chatId) || {};
       if (session.warningActive) {
         await bot.sendMessage(chatId, 
           '⚠️ <b>Acción bloqueada</b>\n\n' +
@@ -236,7 +245,7 @@ module.exports = function messageHandler(bot) {
       if (!user) return;
 
       // Verificar si hay una alerta de sesión activa
-      const session = userSessions.get(chatId) || {};
+      let session = userSessions.get(chatId) || {};
       if (session.warningActive) {
         await bot.sendMessage(chatId, 
           '⚠️ <b>Acción bloqueada</b>\n\n' +
@@ -277,7 +286,7 @@ module.exports = function messageHandler(bot) {
       if (!user) return;
 
       // Verificar si hay una alerta de sesión activa
-      const session = userSessions.get(chatId) || {};
+      let session = userSessions.get(chatId) || {};
       if (session.warningActive) {
         await bot.sendMessage(chatId, 
           '⚠️ <b>Acción bloqueada</b>\n\n' +
@@ -321,7 +330,7 @@ module.exports = function messageHandler(bot) {
       }
 
       // Verificar si hay una alerta de sesión activa
-      const session = userSessions.get(chatId) || {};
+      let session = userSessions.get(chatId) || {};
       if (session.warningActive) {
         await bot.sendMessage(chatId, 
           '⚠️ <b>Acción bloqueada</b>\n\n' +
@@ -370,7 +379,7 @@ module.exports = function messageHandler(bot) {
       }
 
       // Verificar si hay una alerta de sesión activa
-      const session = userSessions.get(chatId) || {};
+      let session = userSessions.get(chatId) || {};
       if (session.warningActive) {
         await bot.sendMessage(chatId, 
           '⚠️ <b>Acción bloqueada</b>\n\n' +
@@ -378,6 +387,144 @@ module.exports = function messageHandler(bot) {
           'Solo puedes usar los botones "✅ Sí, continuar" o "❌ No, salir".',
           { parse_mode: 'HTML' }
         );
+        return;
+      }
+
+      // Manejar búsqueda de administradores
+      if (userSessions.has(chatId) && userSessions.get(chatId).waitingForAdminSearch) {
+        try {
+          const usersResponse = await userApiService.listUsers({ page: 1 });
+          const users = usersResponse.usuarios || [];
+          const admins = users.filter(u => u.role_id === 1);
+          
+          // Buscar por nombre o DNI
+          const searchResults = admins.filter(admin => 
+            (admin.nombre && admin.nombre.toLowerCase().includes(text.toLowerCase())) ||
+            (admin.dni && admin.dni.includes(text))
+          );
+          
+          // Limpiar el estado de búsqueda
+          userSessions.get(chatId).waitingForAdminSearch = false;
+          
+          if (searchResults.length > 0) {
+            const userButtons = [];
+            searchResults.forEach(admin => {
+              userButtons.push([{ 
+                text: `👑 ${admin.nombre || 'Sin nombre'}`, 
+                callback_data: `admin_detail_${admin.id}` 
+              }]);
+            });
+            
+            userButtons.push([{ text: '🔙 Volver a Administradores', callback_data: 'admin_type_menu' }]);
+            
+            await bot.sendMessage(chatId,
+              `🔍 **Resultados de Búsqueda**\n\n` +
+              `Se encontraron ${searchResults.length} administrador(es) con "${text}":\n\n` +
+              `Selecciona un administrador para ver sus detalles:`,
+              {
+                parse_mode: 'Markdown',
+                reply_markup: { inline_keyboard: userButtons }
+              }
+            );
+          } else {
+            await bot.sendMessage(chatId,
+              `❌ **Sin Resultados**\n\n` +
+              `No se encontraron administradores con "${text}".\n\n` +
+              `Intenta con otro término de búsqueda.`,
+              {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: '🔍 Buscar de nuevo', callback_data: 'search_admin' }],
+                    [{ text: '🔙 Volver a Administradores', callback_data: 'admin_type_menu' }]
+                  ]
+                }
+              }
+            );
+          }
+        } catch (error) {
+          console.error('Error al buscar administradores:', error);
+          await bot.sendMessage(chatId,
+            '❌ **Error de búsqueda**\n\nNo se pudo realizar la búsqueda. Inténtalo nuevamente.',
+            {
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '🔙 Volver a Administradores', callback_data: 'admin_type_menu' }]
+                ]
+              }
+            }
+          );
+        }
+        return;
+      }
+
+      // Manejar búsqueda de usuarios
+      if (userSessions.has(chatId) && userSessions.get(chatId).waitingForUserSearch) {
+        try {
+          const usersResponse = await userApiService.listUsers({ page: 1 });
+          const users = usersResponse.usuarios || [];
+          const normalUsers = users.filter(u => u.role_id !== 1);
+          
+          // Buscar por nombre o DNI
+          const searchResults = normalUsers.filter(user => 
+            (user.nombre && user.nombre.toLowerCase().includes(text.toLowerCase())) ||
+            (user.dni && user.dni.includes(text))
+          );
+          
+          // Limpiar el estado de búsqueda
+          userSessions.get(chatId).waitingForUserSearch = false;
+          
+          if (searchResults.length > 0) {
+            const userButtons = [];
+            searchResults.forEach(normalUser => {
+              userButtons.push([{ 
+                text: `👤 ${normalUser.nombre || 'Sin nombre'}`, 
+                callback_data: `user_detail_${normalUser.id}` 
+              }]);
+            });
+            
+            userButtons.push([{ text: '🔙 Volver a Usuarios', callback_data: 'user_type_menu' }]);
+            
+            await bot.sendMessage(chatId,
+              `🔍 **Resultados de Búsqueda**\n\n` +
+              `Se encontraron ${searchResults.length} usuario(s) con "${text}":\n\n` +
+              `Selecciona un usuario para ver sus detalles:`,
+              {
+                parse_mode: 'Markdown',
+                reply_markup: { inline_keyboard: userButtons }
+              }
+            );
+          } else {
+            await bot.sendMessage(chatId,
+              `❌ **Sin Resultados**\n\n` +
+              `No se encontraron usuarios con "${text}".\n\n` +
+              `Intenta con otro término de búsqueda.`,
+              {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: '🔍 Buscar de nuevo', callback_data: 'search_user' }],
+                    [{ text: '🔙 Volver a Usuarios', callback_data: 'user_type_menu' }]
+                  ]
+                }
+              }
+            );
+          }
+        } catch (error) {
+          console.error('Error al buscar usuarios:', error);
+          await bot.sendMessage(chatId,
+            '❌ **Error de búsqueda**\n\nNo se pudo realizar la búsqueda. Inténtalo nuevamente.',
+            {
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '🔙 Volver a Usuarios', callback_data: 'user_type_menu' }]
+                ]
+              }
+            }
+          );
+        }
         return;
       }
 
@@ -484,7 +631,7 @@ module.exports = function messageHandler(bot) {
               parse_mode: 'Markdown',
               reply_markup: {
                 inline_keyboard: [
-                  [{ text: '❌ Cancelar', callback_data: 'admin_autorizaciones' }]
+                  [{ text: '❌ Cancelar', callback_data: 'admin_generador_menu' }]
                 ]
               }
             }
@@ -510,8 +657,6 @@ module.exports = function messageHandler(bot) {
             userSessions.delete(chatId);
             
             // Mostrar confirmación con datos del usuario
-            const { confirmarGenerarAutorizacion } = require('../menus/autorizacionesMenu');
-            
             await bot.sendMessage(chatId,
               '👤 **Usuario Encontrado**\n\n' +
               `📛 **Nombre:** ${userData.nombre}\n` +
@@ -521,7 +666,13 @@ module.exports = function messageHandler(bot) {
               '❓ **¿Deseas generar una autorización para este usuario?**',
               {
                 parse_mode: 'Markdown',
-                ...confirmarGenerarAutorizacion(text, userData)
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: '✅ Generar Autorización', callback_data: `admin_confirmar_autorizacion_${text}` }],
+                    [{ text: '❌ Cancelar', callback_data: 'admin_generador_menu' }],
+                    [{ text: '🔙 Volver', callback_data: 'admin_generador_menu' }]
+                  ]
+                }
               }
             );
           } else {
@@ -533,7 +684,7 @@ module.exports = function messageHandler(bot) {
                 parse_mode: 'Markdown',
                 reply_markup: {
                   inline_keyboard: [
-                    [{ text: '❌ Cancelar', callback_data: 'admin_autorizaciones' }]
+                    [{ text: '❌ Cancelar', callback_data: 'admin_generador_menu' }]
                   ]
                 }
               }
@@ -550,7 +701,99 @@ module.exports = function messageHandler(bot) {
               reply_markup: {
                 inline_keyboard: [
                   [{ text: '🔄 Intentar de nuevo', callback_data: 'admin_generar_autorizacion' }],
-                  [{ text: '🔙 Volver al Menú', callback_data: 'admin_autorizaciones' }]
+                  [{ text: '🔙 Volver al Menú', callback_data: 'admin_generador_menu' }]
+                ]
+              }
+            }
+          );
+        }
+        return;
+      }
+
+      // Manejar generación de Compa-Venta por DNI (admin)
+      if (userSessions.has(chatId) && userSessions.get(chatId).adminAction === 'generar_compaventa') {
+        // Validar DNI (solo números, entre 6 y 12 caracteres)
+        if (!text || !/^\d{6,12}$/.test(text)) {
+          await bot.sendMessage(chatId, 
+            '❌ **DNI inválido**\n\n' +
+            'El DNI debe contener solo números y tener entre 6 y 12 dígitos.\n\n' +
+            '📋 Ejemplo: 12345678\n\n' +
+            'Inténtalo nuevamente:',
+            { 
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '❌ Cancelar', callback_data: 'admin_generador_menu' }]
+                ]
+              }
+            }
+          );
+          return;
+        }
+
+        try {
+          // Buscar usuario por DNI
+          const axios = require('axios');
+          const backendUrl = process.env.BACKEND_BASE_URL;
+          const response = await axios.get(`${backendUrl}/users/dni/${text}`, {
+            headers: {
+              'Authorization': `Bearer ${process.env.BACKEND_API_KEY}`,
+              'X-API-Key': process.env.BACKEND_API_KEY
+            }
+          });
+
+          if (response.data.success && response.data.usuario) {
+            const userData = response.data.usuario;
+            
+            // Limpiar la sesión de admin
+            userSessions.delete(chatId);
+            
+            // Mostrar confirmación con datos del usuario
+            await bot.sendMessage(chatId,
+              '👤 **Usuario Encontrado**\n\n' +
+              `📛 **Nombre:** ${userData.nombre}\n` +
+              `🆔 **DNI:** ${userData.dni}\n` +
+              `📱 **Telegram ID:** ${userData.telegram_id}\n` +
+              `🏢 **Sede:** ${userData.sede || 'Sin sede'}\n\n` +
+              '❓ **¿Deseas generar un documento Compa-Venta para este usuario?**',
+              {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: '✅ Generar Compa-Venta', callback_data: `admin_confirmar_compaventa_${text}` }],
+                    [{ text: '❌ Cancelar', callback_data: 'admin_generador_menu' }],
+                    [{ text: '🔙 Volver', callback_data: 'admin_generador_menu' }]
+                  ]
+                }
+              }
+            );
+          } else {
+            await bot.sendMessage(chatId, 
+              '❌ **Usuario no encontrado**\n\n' +
+              `No se encontró ningún usuario con el DNI: ${text}\n\n` +
+              'Verifica que el DNI sea correcto e inténtalo nuevamente:',
+              { 
+                parse_mode: 'Markdown',
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: '❌ Cancelar', callback_data: 'admin_generador_menu' }]
+                  ]
+                }
+              }
+            );
+          }
+        } catch (error) {
+          console.error('Error al buscar usuario por DNI para Compa-Venta:', error);
+          await bot.sendMessage(chatId, 
+            '❌ **Error de Conexión**\n\n' +
+            'No se pudo conectar con el servidor para buscar el usuario.\n\n' +
+            'Inténtalo más tarde.',
+            { 
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '🔄 Intentar de nuevo', callback_data: 'admin_generar_compaventa' }],
+                  [{ text: '🔙 Volver al Menú', callback_data: 'admin_generador_menu' }]
                 ]
               }
             }
@@ -560,142 +803,166 @@ module.exports = function messageHandler(bot) {
       }
 
       // Renovar timeout de sesión
-      renewSessionTimeout(bot, chatId);
+      renewSessionTimeout(chatId);
 
-      switch (text) {
-        case '👤 Perfil':
+      // Manejar el texto del mensaje principal
+      if (text === '🚀 Iniciar') {
+        // Mostrar menú principal directamente
+        // Crear el teclado persistente para el usuario
+        let keyboard = [
+          ['👤 Perfil']
+        ];
+        
+        // Solo agregar consultas si NO es administrador
+        if (user.role_id !== 1) {
+          keyboard[0].push('📝 Consultas'); // Agregar a la primera fila
+          keyboard.push(['🛒 Tienda', '📊 Reportes']); // Segunda fila
+        } else {
+          keyboard.push(['🛒 Tienda', '📊 Reportes']); // Primera fila para admins
+        }
+        
+        // Si es administrador (role_id = 1), añadir botón de admin
+        if (user.role_id === 1) {
+          keyboard.push(['🔑 Panel Admin']); // Añadir fila con botón de admin
+        }
+        
+        // Añadir botón de cerrar sesión
+        keyboard.push(['🚪 Cerrar Sesión']);
+        
+        const replyKeyboard = {
+          reply_markup: { keyboard: keyboard, resize_keyboard: true }
+        };
+        
+        await bot.sendMessage(chatId,
+          `¡Hola ${user.nombre}! 👋\n\nUsa el menú de abajo para navegar.`, replyKeyboard);
+        
+        return;
+      } else if (text === '👤 Perfil') {
+        // Mostrar perfil del usuario (sin menú inline, mantener teclado persistente)
+        await bot.sendMessage(chatId, 
+          `👤 **Tu Perfil**\n\n` +
+          `📛 **Nombre:** ${user.nombre || 'No especificado'}\n` +
+          `🆔 **DNI:** ${user.dni || 'No especificado'}\n` +
+          `📱 **Telegram ID:** ${user.telegram_id}\n` +
+          `🏢 **Sede:** ${user.sede || 'Sin sede'}\n` +
+          `👑 **Rol:** ${user.role_id === 1 ? 'Administrador' : 'Usuario'}`,
+          { 
+            parse_mode: 'Markdown'
+          }
+        );
+      } else if (text === '📝 Consultas') {
+        // Mostrar menú de consultas (con submenú inline)
+        await bot.sendMessage(chatId, 
+          '📝 **Mis Consultas**\n\nSelecciona una opción:',
+          { 
+            parse_mode: 'Markdown',
+            ...consultasMenu()
+          }
+        );
+      } else if (text === '🛒 Tienda') {
+        console.log('Handler de Tienda ejecutado para usuario:', user.nombre);
+        try {
+          // Mostrar tienda (con submenú inline)
           await bot.sendMessage(chatId, 
-            `👤 <b>Tu Perfil</b>\n\n` +
-            `📛 <b>Nombre:</b> ${user.nombre}\n` +
-            `🆔 <b>DNI:</b> ${user.dni}\n` +
-            `📱 <b>Telegram ID:</b> ${user.telegram_id}\n` +
-            `🎭 <b>Rol:</b> ${user.role_id === 1 ? 'Administrador' : 'Usuario'}\n` +
-            `🏢 <b>Sede:</b> ${user.sede || 'Sin sede'}`,
-            { parse_mode: 'HTML' }
-          );
-          break;
-
-        case '📝 Consultas':
-          // Verificar si el usuario es administrador
-          if (user.role_id === 1) {
-            await bot.sendMessage(chatId, 
-              '❌ <b>Acceso restringido</b>\n\n' +
-              'Los administradores no tienen acceso a la sección de consultas.\n' +
-              'Usa el Panel Admin para gestionar el sistema.',
-              { parse_mode: 'HTML' }
-            );
-            return;
-          }
-          
-          const consultasMenu = require('../menus/consultasMenu');
-          await bot.sendMessage(chatId, 'Selecciona una consulta:', consultasMenu());
-          break;
-
-        case '🛒 Tienda':
-          const { tiendaWebApp } = require('../menus/shopMenu');
-          await bot.sendMessage(chatId, 'Bienvenido a la tienda 🛍️', tiendaWebApp());
-          break;
-
-        case '📊 Reportes':
-          const reportsMenu = require('../menus/reportsMenu');
-          await bot.sendMessage(chatId, 'Selecciona un reporte:', reportsMenu());
-          break;
-
-        case '🔑 Panel Admin':
-          if (user.role_id === 1) {
-            const adminMenu = require('../menus/adminMenu');
-            await bot.sendMessage(chatId, 'Panel de Administración:', adminMenu());
-          } else {
-            await bot.sendMessage(chatId, '❌ No tienes permisos de administrador.');
-          }
-          break;
-
-        case '🚪 Cerrar Sesión':
-          // Limpiar sesión y mostrar solo botón de inicio
-          const { clearUserSession } = require('../utils/session');
-          await clearUserSession(bot, chatId);
-          
-          const startKeyboard = {
-            reply_markup: { 
-              keyboard: [['🚀 Iniciar']], 
-              resize_keyboard: true 
+            '🛒 **Tienda**\n\nAccede a nuestros productos y servicios.',
+            { 
+              parse_mode: 'Markdown',
+              ...tiendaWebApp()
             }
-          };
-          
-          await bot.sendMessage(chatId, 
-            '👋 <b>Sesión cerrada</b>\n\nPresiona "Iniciar" para volver a comenzar.',
-            { parse_mode: 'HTML', ...startKeyboard }
           );
-          break;
-
-        case '🚀 Iniciar':
-          // Recrear sesión
-          try {
-            const user = await userApiService.getUser(chatId);
-            if (user) {
-              // Recrear menú persistente
-              let keyboard = [
-                ['👤 Perfil']
-              ];
-              
-              // Solo agregar consultas si NO es administrador
-              if (user.role_id !== 1) {
-                keyboard[0].push('📝 Consultas'); // Agregar a la primera fila
-                keyboard.push(['🛒 Tienda', '📊 Reportes']); // Segunda fila
-              } else {
-                keyboard.push(['🛒 Tienda', '📊 Reportes']); // Primera fila para admins
-              }
-              
-              if (user.role_id === 1) {
-                keyboard.push(['🔑 Panel Admin']);
-              }
-              
-              keyboard.push(['🚪 Cerrar Sesión']);
-              
-              const replyKeyboard = {
-                reply_markup: { keyboard: keyboard, resize_keyboard: true }
-              };
-              
-              const { startSessionTimeout } = require('../utils/session');
-              startSessionTimeout(bot, chatId);
-              
-              await bot.sendMessage(chatId,
-                `¡Hola ${user.nombre}! 👋\n\nUsa el menú de abajo para navegar.`, replyKeyboard);
+          console.log('Mensaje de tienda enviado correctamente');
+        } catch (error) {
+          console.error('Error en handler de Tienda:', error);
+          await bot.sendMessage(chatId, 
+            '❌ **Error**\n\nOcurrió un error al cargar la tienda.',
+            { parse_mode: 'Markdown' }
+          );
+        }
+      } else if (text === '📊 Reportes') {
+        // Mostrar reportes (solo para admins)
+        if (user.role_id === 1) {
+          await bot.sendMessage(chatId, 
+            '📊 **Reportes**\n\nAccede a los reportes del sistema.',
+            { 
+              parse_mode: 'Markdown',
+              ...reportsMenu(chatId)
             }
-          } catch (error) {
-            await bot.sendMessage(chatId, '❌ Error al iniciar sesión.');
-          }
-          break;
-
-        default:
-          await bot.sendMessage(chatId, 
-            '❓ <b>Comando no reconocido</b>\n\n' +
-            'Usa las opciones del menú de abajo para navegar:\n\n' +
-            '• 👤 Perfil - Ver tu información\n' +
-            '• 📝 Consultas - Ver reportes y crédito\n' +
-            '• 🛒 Tienda - Acceder a la tienda\n' +
-            '• 📊 Reportes - Generar reportes\n' +
-            (user.role_id === 1 ? '• 🔑 Panel Admin - Administración\n' : '') +
-            '• 🚪 Cerrar Sesión - Salir del sistema',
-            { parse_mode: 'HTML' }
           );
-          break;
+        } else {
+          await bot.sendMessage(chatId, 
+            '❌ **Acceso Denegado**\n\nNo tienes permisos para acceder a los reportes.',
+            { 
+              parse_mode: 'Markdown'
+            }
+          );
+        }
+      } else if (text === '🔑 Panel Admin') {
+        // Mostrar panel admin (solo para admins)
+        if (user.role_id === 1) {
+          await bot.sendMessage(chatId, 
+            '🔑 **Panel de Administración**\n\nSelecciona una opción:',
+            { 
+              parse_mode: 'Markdown',
+              ...adminMenu()
+            }
+          );
+        } else {
+          await bot.sendMessage(chatId, 
+            '❌ **Acceso Denegado**\n\nNo tienes permisos de administrador.',
+            { 
+              parse_mode: 'Markdown'
+            }
+          );
+        }
+      } else if (text === '🚪 Cerrar Sesión') {
+        // Cerrar sesión correctamente
+        console.log(`🚪 Usuario ${user.nombre} cerrando sesión...`);
+        try {
+          // Limpiar sesión completa y mostrar botón Iniciar
+          await clearUserSession(bot, chatId, true); // skipFinalMessage = true
+          
+          // Enviar mensaje de despedida con botón Iniciar
+          await bot.sendMessage(chatId, 
+            '👋 **Sesión Cerrada**\n\nHasta luego. Presiona "🚀 Iniciar" para volver a comenzar.',
+            { 
+              parse_mode: 'Markdown',
+              reply_markup: {
+                keyboard: [['🚀 Iniciar']], 
+                resize_keyboard: true 
+              }
+            }
+          );
+          console.log(`✅ Sesión cerrada correctamente para ${user.nombre}`);
+        } catch (error) {
+          console.error('Error al cerrar sesión:', error);
+          await bot.sendMessage(chatId, 
+            '❌ **Error**\n\nOcurrió un error al cerrar la sesión. Usa /start para reiniciar.',
+            { 
+              parse_mode: 'Markdown',
+              reply_markup: {
+                keyboard: [['🚀 Iniciar']], 
+                resize_keyboard: true 
+              }
+            }
+          );
+        }
+      } else {
+        // Mensaje no reconocido (sin menú inline, mantener teclado persistente)
+        await bot.sendMessage(chatId, 
+          '❓ **Comando no reconocido**\n\n' +
+          'Por favor, utiliza los botones del menú para navegar.',
+          { 
+            parse_mode: 'Markdown'
+          }
+        );
       }
 
     } catch (error) {
       console.error('Error en messageHandler:', error);
-      // Solo mostrar error si el usuario existe (está registrado)
-      try {
-        const user = await userApiService.getUser(chatId);
-        if (user) {
-          await bot.sendMessage(chatId,
-            '❌ Error interno del servidor. Inténtalo nuevamente.',
-            { parse_mode: 'Markdown' });
-        }
-      } catch (checkError) {
-        // Si no se puede verificar el usuario, no mostrar error
-        console.log('Usuario no registrado, ignorando error del messageHandler');
-      }
+      await bot.sendMessage(chatId, 
+        '❌ **Error interno**\n\nOcurrió un error al procesar tu mensaje. Inténtalo nuevamente.',
+        { parse_mode: 'Markdown' }
+      );
     }
   });
 };
